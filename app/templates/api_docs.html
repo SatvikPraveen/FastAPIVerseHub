@@ -1,0 +1,603 @@
+<!-- File: app/templates/api_docs.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ app_name }} API Documentation</title>
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Oxygen, Ubuntu, Cantarell, sans-serif;
+        line-height: 1.6;
+        color: #333;
+        background-color: #f8f9fa;
+      }
+
+      .header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem 0;
+        text-align: center;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .header h1 {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+        font-weight: 700;
+      }
+
+      .header p {
+        font-size: 1.2rem;
+        opacity: 0.9;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+
+      .nav-tabs {
+        display: flex;
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
+      }
+
+      .nav-tab {
+        flex: 1;
+        padding: 1rem;
+        text-align: center;
+        background: white;
+        border: none;
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: 500;
+        color: #666;
+        transition: all 0.3s ease;
+      }
+
+      .nav-tab:hover {
+        background: #f8f9fa;
+      }
+
+      .nav-tab.active {
+        background: #667eea;
+        color: white;
+      }
+
+      .tab-content {
+        display: none;
+        background: white;
+        padding: 2rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .tab-content.active {
+        display: block;
+      }
+
+      .endpoint-group {
+        margin-bottom: 3rem;
+      }
+
+      .endpoint-group h2 {
+        color: #2d3748;
+        border-bottom: 2px solid #e2e8f0;
+        padding-bottom: 0.5rem;
+        margin-bottom: 1.5rem;
+      }
+
+      .endpoint {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        margin-bottom: 1.5rem;
+        overflow: hidden;
+      }
+
+      .endpoint-header {
+        padding: 1rem;
+        background: #f8f9fa;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
+
+      .method-badge {
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+
+      .method-get {
+        background: #e6f3ff;
+        color: #0066cc;
+      }
+      .method-post {
+        background: #e8f5e8;
+        color: #228b22;
+      }
+      .method-put {
+        background: #fff0e6;
+        color: #ff8c00;
+      }
+      .method-delete {
+        background: #ffe6e6;
+        color: #dc3545;
+      }
+
+      .endpoint-path {
+        font-family: "Monaco", "Consolas", monospace;
+        font-size: 1rem;
+        color: #2d3748;
+      }
+
+      .endpoint-description {
+        color: #666;
+        margin-left: auto;
+      }
+
+      .endpoint-body {
+        padding: 1rem;
+        border-top: 1px solid #e2e8f0;
+        background: white;
+      }
+
+      .code-block {
+        background: #2d3748;
+        color: #e2e8f0;
+        padding: 1rem;
+        border-radius: 6px;
+        font-family: "Monaco", "Consolas", monospace;
+        font-size: 0.9rem;
+        overflow-x: auto;
+        margin: 1rem 0;
+      }
+
+      .params-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+      }
+
+      .params-table th,
+      .params-table td {
+        padding: 0.75rem;
+        text-align: left;
+        border-bottom: 1px solid #e2e8f0;
+      }
+
+      .params-table th {
+        background: #f8f9fa;
+        font-weight: 600;
+        color: #2d3748;
+      }
+
+      .param-required {
+        color: #e53e3e;
+        font-weight: 600;
+      }
+
+      .param-optional {
+        color: #666;
+      }
+
+      .response-example {
+        background: #f8f9fa;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 1rem;
+        margin: 1rem 0;
+      }
+
+      .auth-section {
+        background: #ebf8ff;
+        border: 1px solid #bee3f8;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+      }
+
+      .auth-section h3 {
+        color: #2c5282;
+        margin-bottom: 1rem;
+      }
+
+      .getting-started {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+      }
+
+      .getting-started h2 {
+        margin-bottom: 1rem;
+      }
+
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+        margin: 2rem 0;
+      }
+
+      .feature-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .feature-card h3 {
+        color: #2d3748;
+        margin-bottom: 0.5rem;
+      }
+
+      .feature-card p {
+        color: #666;
+      }
+
+      @media (max-width: 768px) {
+        .container {
+          padding: 1rem;
+        }
+
+        .nav-tabs {
+          flex-direction: column;
+        }
+
+        .endpoint-header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 0.5rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Header -->
+    <div class="header">
+      <h1>{{ app_name }} API</h1>
+      <p>Comprehensive RESTful API for learning management</p>
+    </div>
+
+    <div class="container">
+      <!-- Navigation Tabs -->
+      <div class="nav-tabs">
+        <button class="nav-tab active" onclick="showTab('overview')">
+          Overview
+        </button>
+        <button class="nav-tab" onclick="showTab('authentication')">
+          Authentication
+        </button>
+        <button class="nav-tab" onclick="showTab('endpoints')">
+          Endpoints
+        </button>
+        <button class="nav-tab" onclick="showTab('examples')">Examples</button>
+      </div>
+
+      <!-- Overview Tab -->
+      <div id="overview" class="tab-content active">
+        <div class="getting-started">
+          <h2>🚀 Getting Started</h2>
+          <p>
+            Welcome to the {{ app_name }} API! This powerful RESTful API
+            provides access to our comprehensive learning management system,
+            including user management, course creation, file uploads, real-time
+            features, and more.
+          </p>
+        </div>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <h3>🔐 Authentication</h3>
+            <p>
+              Secure JWT-based authentication with support for refresh tokens,
+              MFA, and social login.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <h3>👥 User Management</h3>
+            <p>
+              Complete user lifecycle management with profiles, preferences, and
+              role-based access control.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <h3>📚 Course System</h3>
+            <p>
+              Full-featured course management with enrollment, progress
+              tracking, and analytics.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <h3>📁 File Handling</h3>
+            <p>
+              Secure file upload, download, and streaming with validation and
+              optimization.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <h3>⚡ Real-time Features</h3>
+            <p>
+              WebSocket connections and Server-Sent Events for live
+              notifications and updates.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <h3>📊 Analytics & Reporting</h3>
+            <p>
+              Comprehensive analytics, metrics, and reporting capabilities for
+              insights.
+            </p>
+          </div>
+        </div>
+
+        <h2>📖 API Versions</h2>
+        <ul>
+          <li>
+            <strong>v1</strong> - Current stable version with core functionality
+          </li>
+          <li>
+            <strong>v2</strong> - Advanced features including AI recommendations
+            and enhanced analytics
+          </li>
+        </ul>
+
+        <h2>📋 Base URLs</h2>
+        <div class="code-block">
+          Production: https://api.fastapiversehub.com Development:
+          http://localhost:8000
+        </div>
+      </div>
+
+      <!-- Authentication Tab -->
+      <div id="authentication" class="tab-content">
+        <div class="auth-section">
+          <h3>🔑 Authentication Methods</h3>
+          <p>
+            The API supports multiple authentication methods to ensure secure
+            access to resources.
+          </p>
+        </div>
+
+        <h2>JWT Bearer Token</h2>
+        <p>
+          Most endpoints require authentication using JWT bearer tokens in the
+          Authorization header.
+        </p>
+
+        <div class="code-block">
+          Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        </div>
+
+        <h2>API Keys</h2>
+        <p>For server-to-server communication, you can use API keys.</p>
+
+        <div class="code-block">X-API-Key: your-api-key-here</div>
+
+        <h2>Token Refresh</h2>
+        <p>
+          Access tokens expire after 30 minutes. Use refresh tokens to obtain
+          new access tokens.
+        </p>
+
+        <div class="code-block">
+          POST /api/v1/auth/refresh { "refresh_token": "your-refresh-token" }
+        </div>
+      </div>
+
+      <!-- Endpoints Tab -->
+      <div id="endpoints" class="tab-content">
+        <!-- Authentication Endpoints -->
+        <div class="endpoint-group">
+          <h2>🔐 Authentication</h2>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <span class="method-badge method-post">POST</span>
+              <span class="endpoint-path">/api/v1/auth/register</span>
+              <span class="endpoint-description">Register new user</span>
+            </div>
+            <div class="endpoint-body">
+              <h4>Request Body</h4>
+              <table class="params-table">
+                <tr>
+                  <th>Parameter</th>
+                  <th>Type</th>
+                  <th>Required</th>
+                  <th>Description</th>
+                </tr>
+                <tr>
+                  <td>email</td>
+                  <td>string</td>
+                  <td class="param-required">Required</td>
+                  <td>User email address</td>
+                </tr>
+                <tr>
+                  <td>password</td>
+                  <td>string</td>
+                  <td class="param-required">Required</td>
+                  <td>User password (min 8 chars)</td>
+                </tr>
+                <tr>
+                  <td>full_name</td>
+                  <td>string</td>
+                  <td class="param-optional">Optional</td>
+                  <td>User's full name</td>
+                </tr>
+              </table>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <span class="method-badge method-post">POST</span>
+              <span class="endpoint-path">/api/v1/auth/login</span>
+              <span class="endpoint-description">User login</span>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <span class="method-badge method-get">GET</span>
+              <span class="endpoint-path">/api/v1/auth/me</span>
+              <span class="endpoint-description">Get current user</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Course Endpoints -->
+        <div class="endpoint-group">
+          <h2>📚 Courses</h2>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <span class="method-badge method-get">GET</span>
+              <span class="endpoint-path">/api/v1/courses</span>
+              <span class="endpoint-description">List courses</span>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <span class="method-badge method-post">POST</span>
+              <span class="endpoint-path">/api/v1/courses</span>
+              <span class="endpoint-description">Create course</span>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <span class="method-badge method-get">GET</span>
+              <span class="endpoint-path">/api/v1/courses/{id}</span>
+              <span class="endpoint-description">Get course details</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- File Upload Endpoints -->
+        <div class="endpoint-group">
+          <h2>📁 File Uploads</h2>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <span class="method-badge method-post">POST</span>
+              <span class="endpoint-path">/api/v1/uploads/file</span>
+              <span class="endpoint-description">Upload single file</span>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <span class="method-badge method-get">GET</span>
+              <span class="endpoint-path">/api/v1/uploads/download/{id}</span>
+              <span class="endpoint-description">Download file</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Examples Tab -->
+      <div id="examples" class="tab-content">
+        <h2>🔧 Code Examples</h2>
+
+        <h3>User Registration</h3>
+        <div class="code-block">
+          curl -X POST "http://localhost:8000/api/v1/auth/register" \ -H
+          "Content-Type: application/json" \ -d '{ "email": "user@example.com",
+          "password": "SecurePassword123!", "full_name": "John Doe" }'
+        </div>
+
+        <h3>Login and Get Token</h3>
+        <div class="code-block">
+          curl -X POST "http://localhost:8000/api/v1/auth/login" \ -H
+          "Content-Type: application/json" \ -d '{ "email": "user@example.com",
+          "password": "SecurePassword123!" }'
+        </div>
+
+        <h3>Create Course</h3>
+        <div class="code-block">
+          curl -X POST "http://localhost:8000/api/v1/courses" \ -H
+          "Authorization: Bearer YOUR_TOKEN" \ -H "Content-Type:
+          application/json" \ -d '{ "title": "Python for Beginners",
+          "description": "Learn Python programming from scratch", "category":
+          "programming", "difficulty": "beginner", "price": 99.99 }'
+        </div>
+
+        <h3>Upload File</h3>
+        <div class="code-block">
+          curl -X POST "http://localhost:8000/api/v1/uploads/file" \ -H
+          "Authorization: Bearer YOUR_TOKEN" \ -F "file=@document.pdf" \ -F
+          "description=Course materials" \ -F "category=documents"
+        </div>
+
+        <h3>WebSocket Connection (JavaScript)</h3>
+        <div class="code-block">
+          const ws = new
+          WebSocket('ws://localhost:8000/api/v1/ws/connect/client-123?token=YOUR_TOKEN');
+          ws.onopen = function() { console.log('Connected to WebSocket'); //
+          Subscribe to a channel ws.send(JSON.stringify({ type: 'subscribe',
+          channel: 'course-updates' })); }; ws.onmessage = function(event) {
+          const message = JSON.parse(event.data); console.log('Received:',
+          message); };
+        </div>
+
+        <h3>Server-Sent Events (JavaScript)</h3>
+        <div class="code-block">
+          const eventSource = new
+          EventSource('/api/v1/sse/events?channels=notifications');
+          eventSource.onmessage = function(event) { const data =
+          JSON.parse(event.data); console.log('SSE Event:', data); };
+          eventSource.addEventListener('notification', function(event) { const
+          notification = JSON.parse(event.data);
+          showNotification(notification.title, notification.content); });
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script>
+      function showTab(tabName) {
+        // Hide all tab contents
+        const tabContents = document.querySelectorAll(".tab-content");
+        tabContents.forEach((tab) => tab.classList.remove("active"));
+
+        // Remove active class from all tabs
+        const tabs = document.querySelectorAll(".nav-tab");
+        tabs.forEach((tab) => tab.classList.remove("active"));
+
+        // Show selected tab content
+        document.getElementById(tabName).classList.add("active");
+
+        // Add active class to clicked tab
+        event.target.classList.add("active");
+      }
+    </script>
+  </body>
+</html>

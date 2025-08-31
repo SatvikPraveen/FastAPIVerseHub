@@ -1,0 +1,259 @@
+# File Location: pyproject.toml
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fastapi-verse-hub"
+version = "1.0.0"
+description = "A comprehensive FastAPI learning and demonstration project"
+authors = [
+    {name = "FastAPI Verse Hub Team", email = "team@fastapiversehub.com"}
+]
+readme = "README.md"
+license = {text = "MIT"}
+keywords = ["fastapi", "python", "api", "learning", "education"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Framework :: FastAPI",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Topic :: Education",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.11"
+
+dependencies = [
+    # FastAPI and core dependencies
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic[email]>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    
+    # Database
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
+    "psycopg2-binary>=2.9.0",
+    "asyncpg>=0.29.0",
+    
+    # Authentication & Security
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "python-multipart>=0.0.6",
+    
+    # HTTP Client
+    "httpx>=0.25.0",
+    
+    # Redis
+    "redis>=5.0.0",
+    
+    # Email
+    "aiosmtplib>=3.0.0",
+    "jinja2>=3.1.0",
+    
+    # File handling
+    "aiofiles>=23.2.0",
+    "python-magic>=0.4.27",
+    "pillow>=10.1.0",
+    
+    # Utilities
+    "python-dotenv>=1.0.0",
+    "structlog>=23.2.0",
+    "rich>=13.7.0",
+    
+    # WebSockets
+    "websockets>=12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    # Testing
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "pytest-xdist>=3.5.0",
+    "httpx>=0.25.0",
+    
+    # Code quality
+    "black>=23.11.0",
+    "flake8>=6.1.0",
+    "mypy>=1.7.0",
+    "isort>=5.12.0",
+    "pre-commit>=3.6.0",
+    
+    # Development tools
+    "watchfiles>=0.21.0",
+    "faker>=20.1.0",
+]
+
+production = [
+    # Monitoring
+    "sentry-sdk[fastapi]>=1.38.0",
+    "prometheus-client>=0.19.0",
+    
+    # Performance
+    "gunicorn>=21.2.0",
+    "gevent>=23.9.0",
+    
+    # Logging
+    "python-json-logger>=2.0.7",
+]
+
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.4.0",
+    "mkdocs-swagger-ui-tag>=0.6.0",
+]
+
+all = [
+    "fastapi-verse-hub[dev,production,docs]"
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/fastapi-verse-hub"
+Repository = "https://github.com/yourusername/fastapi-verse-hub.git"
+Documentation = "https://yourusername.github.io/fastapi-verse-hub/"
+Issues = "https://github.com/yourusername/fastapi-verse-hub/issues"
+
+[project.scripts]
+fastapi-verse-hub = "app.main:main"
+
+# Tool configurations
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.setuptools.package-data]
+"app" = ["templates/*.html", "static/*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # Directories
+  \.eggs
+  | \.git
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | migrations
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["app"]
+skip = ["migrations"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = [
+    "redis.*",
+    "passlib.*",
+    "jose.*",
+    "sqlalchemy.*",
+    "alembic.*",
+    "faker.*",
+    "magic.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["app/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "e2e: marks tests as end-to-end tests",
+    "unit: marks tests as unit tests",
+    "performance: marks tests as performance tests",
+]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--disable-warnings",
+    "--cov=app",
+    "--cov-report=term-missing",
+    "--cov-report=html:test-results/htmlcov",
+    "--cov-fail-under=80",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/migrations/*",
+    "*/venv/*",
+    "*/env/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.flake8]
+max-line-length = 88
+extend-ignore = ["E203", "W503", "E501"]
+exclude = [
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "migrations",
+    "build",
+    "dist",
+]
+per-file-ignores = [
+    "__init__.py:F401",
+    "conftest.py:F401,F811",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", "migrations"]
+skips = ["B101", "B601"]

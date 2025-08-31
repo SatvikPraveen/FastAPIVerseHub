@@ -1,0 +1,228 @@
+# File Location: .gitignore
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+test-results/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# FastAPI specific
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Upload directories
+uploads/
+static/uploads/
+media/
+
+# Logs
+logs/
+*.log
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+*.p12
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Alembic
+alembic.ini
+
+# Testing
+.coverage
+coverage.xml
+*.cover
+.pytest_cache/
+test.db*
+
+# Performance and profiling
+*.prof
+*.lprof
+
+# Documentation builds
+docs/_build/
+docs/openapi/
+
+# Secrets and credentials
+secrets/
+credentials/
+.secrets
+*.env.secret
+
+# Node.js (if using frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Redis dump
+dump.rdb
+
+# PostgreSQL
+*.sql
+*.dump
+
+# Monitoring and metrics
+prometheus_data/
+grafana_data/
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# pyright
+pyrightconfig.json
