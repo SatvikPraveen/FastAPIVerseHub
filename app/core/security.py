@@ -1,10 +1,10 @@
 # File: app/core/security.py
 
-from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Union
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict
 
 from fastapi import HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
@@ -38,21 +38,21 @@ class SecurityManager:
     def create_access_token(
         self, 
         data: Dict[str, Any], 
-        expires_delta: Optional[timedelta] = None
+        expires_delta: timedelta | None = None
     ) -> str:
         """Create JWT access token."""
         to_encode = data.copy()
         
         if expires_delta:
-            expire = datetime.utcnow() + expires_delta
+            expire = datetime.now(timezone.utc) + expires_delta
         else:
-            expire = datetime.utcnow() + timedelta(
+            expire = datetime.now(timezone.utc) + timedelta(
                 minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
             )
         
         to_encode.update({
             "exp": expire,
-            "iat": datetime.utcnow(),
+            "iat": datetime.now(timezone.utc),
             "type": "access"
         })
         
@@ -67,21 +67,21 @@ class SecurityManager:
     def create_refresh_token(
         self, 
         data: Dict[str, Any], 
-        expires_delta: Optional[timedelta] = None
+        expires_delta: timedelta | None = None
     ) -> str:
         """Create JWT refresh token."""
         to_encode = data.copy()
         
         if expires_delta:
-            expire = datetime.utcnow() + expires_delta
+            expire = datetime.now(timezone.utc) + expires_delta
         else:
-            expire = datetime.utcnow() + timedelta(
+            expire = datetime.now(timezone.utc) + timedelta(
                 days=settings.REFRESH_TOKEN_EXPIRE_DAYS
             )
         
         to_encode.update({
             "exp": expire,
-            "iat": datetime.utcnow(),
+            "iat": datetime.now(timezone.utc),
             "type": "refresh"
         })
         
@@ -104,7 +104,7 @@ class SecurityManager:
             
             # Check if token has expired
             exp = payload.get("exp")
-            if exp and datetime.utcnow() > datetime.fromtimestamp(exp):
+            if exp and datetime.now(timezone.utc) > datetime.fromtimestamp(exp):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Token has expired",
@@ -196,7 +196,7 @@ def get_password_hash(password: str) -> str:
 
 def create_access_token(
     data: Dict[str, Any], 
-    expires_delta: Optional[timedelta] = None
+    expires_delta: timedelta | None = None
 ) -> str:
     """Create access token using global security manager."""
     return security_manager.create_access_token(data, expires_delta)
@@ -204,7 +204,7 @@ def create_access_token(
 
 def create_refresh_token(
     data: Dict[str, Any], 
-    expires_delta: Optional[timedelta] = None
+    expires_delta: timedelta | None = None
 ) -> str:
     """Create refresh token using global security manager."""
     return security_manager.create_refresh_token(data, expires_delta)
