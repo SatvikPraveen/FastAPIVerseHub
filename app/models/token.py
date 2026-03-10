@@ -4,12 +4,11 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, ForeignKey, JSON
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
 
-Base = declarative_base()
+from app.models.base import Base
 
 
 class TokenType(str, enum.Enum):

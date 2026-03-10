@@ -1,14 +1,13 @@
 # File: app/models/user.py
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, JSON
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
-Base = declarative_base()
+from app.models.base import Base
 
 
 class User(Base):
@@ -109,6 +108,83 @@ class User(Base):
         return self.last_activity_at > threshold
 
 
+class FileUpload(Base):
+    """Model for tracking user file uploads."""
+
+    __tablename__ = "file_uploads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    filename = Column(String(255), nullable=False)
+    original_filename = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    file_size = Column(Integer, nullable=False)  # bytes
+    content_type = Column(String(100), nullable=True)
+    file_hash = Column(String(64), nullable=True)  # sha256
+
+    category = Column(String(100), default="general")
+    description = Column(Text, nullable=True)
+    is_public = Column(Boolean, default=False)
+    is_deleted = Column(Boolean, default=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", back_populates="file_uploads")
+
+    def __repr__(self):
+        return f"<FileUpload(id={self.id}, filename='{self.filename}', user_id={self.user_id})>"
+
+
+class FormSubmission(Base):
+    """Model for tracking form submissions (contact, feedback, survey, etc.)."""
+
+    __tablename__ = "form_submissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # nullable = anonymous
+
+    form_type = Column(String(50), nullable=False)  # contact, feedback, survey, multipart
+    data = Column(JSON, nullable=False)  # serialised form payload
+    status = Column(String(20), default="pending")  # pending, reviewed, resolved
+    is_anonymous = Column(Boolean, default=False)
+
+    # Contact-specific
+    submitter_name = Column(String(255), nullable=True)
+    submitter_email = Column(String(255), nullable=True)
+
+    # Survey-specific
+    survey_id = Column(Integer, nullable=True)
+    completion_time_seconds = Column(Integer, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    user = relationship("User", back_populates="form_submissions")
+
+    def __repr__(self):
+        return f"<FormSubmission(id={self.id}, form_type='{self.form_type}', user_id={self.user_id})>"
+
+
+class Survey(Base):
+    """Model for survey definitions."""
+
+    __tablename__ = "surveys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    questions = Column(JSON, nullable=False)  # list of question objects
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<Survey(id={self.id}, title='{self.title}')>"
+
+
 class DeviceRegistration(Base):
     """Model for tracking user's registered devices."""
     
@@ -116,7 +192,7 @@ class DeviceRegistration(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    
+
     device_name = Column(String(100), nullable=False)
     device_type = Column(String(50), nullable=False)  # mobile, desktop, tablet
     device_fingerprint = Column(String(255), nullable=False)

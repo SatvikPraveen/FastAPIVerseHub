@@ -34,7 +34,7 @@ async def list_courses(
     category: Optional[str] = Query(None, description="Filter by category"),
     difficulty: Optional[str] = Query(None, description="Filter by difficulty"),
     is_published: Optional[bool] = Query(None, description="Filter by published status"),
-    current_user: Optional[User] = Depends(get_current_user_optional()),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db)
 ) -> Dict[str, Any]:
     """List all courses with optional filters."""
@@ -53,7 +53,7 @@ async def list_courses(
     )
     
     return {
-        "items": [CourseResponse.from_orm(course) for course in courses],
+        "items": [CourseResponse.model_validate(course) for course in courses],
         "total": total,
         "skip": pagination.skip,
         "limit": pagination.limit,
@@ -75,13 +75,13 @@ async def create_course(
         instructor_id=current_user.id
     )
     
-    return CourseResponse.from_orm(course)
+    return CourseResponse.model_validate(course)
 
 
 @router.get("/{course_id}", response_model=CourseWithStats)
 async def get_course(
     course_id: int,
-    current_user: Optional[User] = Depends(get_current_user_optional()),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db)
 ) -> CourseWithStats:
     """Get course by ID with statistics."""
@@ -107,7 +107,7 @@ async def get_course(
     # Get course statistics
     stats = await course_service.get_course_stats(course_id)
     
-    course_data = CourseResponse.from_orm(course).dict()
+    course_data = CourseResponse.model_validate(course).model_dump()
     course_data.update({
         "total_enrollments": stats.get("total_enrollments", 0),
         "completed_enrollments": stats.get("completed_enrollments", 0),
@@ -147,7 +147,7 @@ async def update_course(
         course_update=course_update
     )
     
-    return CourseResponse.from_orm(updated_course)
+    return CourseResponse.model_validate(updated_course)
 
 
 @router.delete("/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -206,7 +206,7 @@ async def publish_course(
         )
     
     published_course = await course_service.publish_course(course_id)
-    return CourseResponse.from_orm(published_course)
+    return CourseResponse.model_validate(published_course)
 
 
 @router.post("/{course_id}/unpublish", response_model=CourseResponse)
@@ -239,7 +239,7 @@ async def unpublish_course(
         )
     
     unpublished_course = await course_service.unpublish_course(course_id)
-    return CourseResponse.from_orm(unpublished_course)
+    return CourseResponse.model_validate(unpublished_course)
 
 
 @router.post("/{course_id}/enroll")

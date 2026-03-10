@@ -3,7 +3,7 @@
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from pydantic import BaseModel, EmailStr, validator
+from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user, get_db
@@ -21,8 +21,9 @@ class ContactForm(BaseModel):
     message: str
     phone: Optional[str] = None
     
-    @validator('message')
-    def validate_message(cls, v):
+    @field_validator('message')
+    @classmethod
+    def validate_message(cls, v: str) -> str:
         if len(v.strip()) < 10:
             raise ValueError('Message must be at least 10 characters long')
         return v.strip()
@@ -36,8 +37,9 @@ class FeedbackForm(BaseModel):
     category: str
     anonymous: bool = False
     
-    @validator('rating')
-    def validate_rating(cls, v):
+    @field_validator('rating')
+    @classmethod
+    def validate_rating(cls, v: int) -> int:
         if not 1 <= v <= 5:
             raise ValueError('Rating must be between 1 and 5')
         return v

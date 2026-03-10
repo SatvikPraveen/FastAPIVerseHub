@@ -2,14 +2,16 @@
 
 from typing import Any, Dict
 
+import redis.asyncio as redis
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_db, get_current_user
+from app.core.dependencies import get_db, get_current_user, get_redis
 from app.core.security import security_manager
 from app.models.user import User
 from app.schemas.auth import (
+    ChangePasswordRequest,
     LoginRequest,
     RefreshTokenRequest,
     TokenResponse,
@@ -152,14 +154,22 @@ async def refresh_token(
 
 @router.post("/logout")
 async def logout(
-    current_user: User = Depends(get_current_user)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user: User = Depends(get_current_user),
+    redis_client: redis.Redis = Depends(get_redis)
 ) -> Dict[str, str]:
-    """Logout user (invalidate token on client side)."""
-    # In a more sophisticated implementation, you might:
-    # 1. Add token to a blacklist in Redis
-    # 2. Store token revocation in database
-    # 3. Use shorter-lived tokens with more frequent refresh
-    
+    """Logout user — blacklist the current access token's JTI in Redis."""
+    try:
+        payload = security_manager.verify_access_token(credentials.credentials)
+        jti = payload.get("jti")
+        exp = payload.get("exp")
+        if jti and exp:
+            from datetime import datetime
+            ttl = int(exp - datetime.utcnow().timestamp())
+            if ttl > 0:
+                await redis_client.setex(f"blacklist:jti:{jti}", ttl, "1")
+    except Exception:
+        pass  # Even if blacklisting fails, proceed with logout response
     return {"message": "Successfully logged out"}
 
 
@@ -202,24 +212,23 @@ async def verify_token(
 
 @router.post("/change-password")
 async def change_password(
-    current_password: str,
-    new_password: str,
+    request: ChangePasswordRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ) -> Dict[str, str]:
     """Change user password."""
     auth_service = AuthService(db)
-    
+
     # Verify current password
-    if not security_manager.verify_password(current_password, current_user.hashed_password):
+    if not security_manager.verify_password(request.current_password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Incorrect current password"
         )
-    
+
     # Update password
-    await auth_service.change_password(current_user.id, new_password)
-    
+    await auth_service.change_password(current_user.id, request.new_password)
+
     return {"message": "Password changed successfully"}
 
 
@@ -230,22 +239,19 @@ async def forgot_password(
 ) -> Dict[str, str]:
     """Request password reset."""
     auth_service = AuthService(db)
-    
+
     # Check if user exists
     user = await auth_service.get_user_by_email(email)
     if not user:
         # Don't reveal if email exists or not for security
         return {"message": "If the email exists, a reset link has been sent"}
-    
-    # Generate reset token (in real app, send email)
-    reset_token = security_manager.create_access_token(
-        data={"sub": str(user.id), "type": "password_reset"},
-        expires_delta=None  # Use default expiration
-    )
-    
+
+    # Generate a dedicated password_reset token (type != "access")
+    reset_token = security_manager.create_password_reset_token(user_id=user.id)
+
     # TODO: Send email with reset link
     # await email_service.send_password_reset_email(user.email, reset_token)
-    
+
     return {"message": "If the email exists, a reset link has been sent"}
 
 

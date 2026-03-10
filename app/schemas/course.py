@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional, Dict, Any
 
-from pydantic import BaseModel, validator, Field
+from pydantic import BaseModel, field_validator, Field, ConfigDict
 
 
 class CourseBase(BaseModel):
@@ -14,7 +14,7 @@ class CourseBase(BaseModel):
     short_description: Optional[str] = Field(None, max_length=500)
     category: str = Field(..., min_length=1, max_length=100)
     subcategory: Optional[str] = Field(None, max_length=100)
-    difficulty: str = Field("beginner", regex="^(beginner|intermediate|advanced|expert)$")
+    difficulty: str = Field("beginner", pattern="^(beginner|intermediate|advanced|expert)$")
     estimated_duration_hours: Optional[int] = Field(None, ge=0)
     language: str = Field("en", min_length=2, max_length=10)
     tags: Optional[List[str]] = None
@@ -27,15 +27,17 @@ class CourseCreate(CourseBase):
     price: Optional[Decimal] = Field(Decimal("0.00"), ge=0)
     original_price: Optional[Decimal] = Field(None, ge=0)
     is_free: bool = True
-    
-    @validator('original_price')
-    def original_price_validation(cls, v, values):
-        if v is not None and 'price' in values:
-            if v < values['price']:
+
+    @field_validator('original_price')
+    @classmethod
+    def original_price_validation(cls, v, info):
+        if v is not None and 'price' in info.data:
+            if v < info.data['price']:
                 raise ValueError('Original price cannot be less than current price')
         return v
-    
-    @validator('tags')
+
+    @field_validator('tags')
+    @classmethod
     def validate_tags(cls, v):
         if v and len(v) > 10:
             raise ValueError('Maximum 10 tags allowed')
@@ -49,7 +51,7 @@ class CourseUpdate(BaseModel):
     short_description: Optional[str] = Field(None, max_length=500)
     category: Optional[str] = Field(None, min_length=1, max_length=100)
     subcategory: Optional[str] = Field(None, max_length=100)
-    difficulty: Optional[str] = Field(None, regex="^(beginner|intermediate|advanced|expert)$")
+    difficulty: Optional[str] = Field(None, pattern="^(beginner|intermediate|advanced|expert)$")
     estimated_duration_hours: Optional[int] = Field(None, ge=0)
     language: Optional[str] = Field(None, min_length=2, max_length=10)
     tags: Optional[List[str]] = None
@@ -67,6 +69,8 @@ class CourseUpdate(BaseModel):
 
 class CourseResponse(BaseModel):
     """Schema for course response data."""
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     title: str
     slug: str
@@ -97,9 +101,6 @@ class CourseResponse(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
     published_at: Optional[datetime] = None
-    
-    class Config:
-        from_attributes = True
 
 
 class CourseWithStats(CourseResponse):
@@ -115,6 +116,8 @@ class CourseWithStats(CourseResponse):
 
 class CourseCard(BaseModel):
     """Simplified course schema for cards/listings."""
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     title: str
     slug: str
@@ -130,9 +133,6 @@ class CourseCard(BaseModel):
     average_rating: float = 0.0
     total_enrollments: int = 0
     is_featured: bool = False
-    
-    class Config:
-        from_attributes = True
 
 
 class CourseAnalytics(BaseModel):
@@ -159,7 +159,7 @@ class LessonBase(BaseModel):
     """Base lesson schema."""
     title: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
-    lesson_type: str = Field("video", regex="^(video|text|quiz|assignment|live)$")
+    lesson_type: str = Field("video", pattern="^(video|text|quiz|assignment|live)$")
     duration_minutes: Optional[int] = Field(None, ge=0)
     order: int = Field(0, ge=0)
     is_free_preview: bool = False
@@ -178,7 +178,7 @@ class LessonUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     content: Optional[str] = None
-    lesson_type: Optional[str] = Field(None, regex="^(video|text|quiz|assignment|live)$")
+    lesson_type: Optional[str] = Field(None, pattern="^(video|text|quiz|assignment|live)$")
     duration_minutes: Optional[int] = Field(None, ge=0)
     order: Optional[int] = Field(None, ge=0)
     video_url: Optional[str] = None
@@ -190,6 +190,8 @@ class LessonUpdate(BaseModel):
 
 class LessonResponse(BaseModel):
     """Schema for lesson response data."""
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     course_id: int
     title: str
@@ -205,13 +207,12 @@ class LessonResponse(BaseModel):
     is_published: bool
     created_at: datetime
     updated_at: Optional[datetime] = None
-    
-    class Config:
-        from_attributes = True
 
 
 class EnrollmentResponse(BaseModel):
     """Schema for enrollment response data."""
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     user_id: int
     course_id: int
@@ -225,9 +226,6 @@ class EnrollmentResponse(BaseModel):
     completed_at: Optional[datetime] = None
     certificate_url: Optional[str] = None
     enrolled_at: datetime
-    
-    class Config:
-        from_attributes = True
 
 
 class CourseReviewBase(BaseModel):
@@ -251,6 +249,8 @@ class CourseReviewUpdate(BaseModel):
 
 class CourseReviewResponse(BaseModel):
     """Schema for course review response data."""
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     user_id: int
     user_name: Optional[str] = None
@@ -263,9 +263,6 @@ class CourseReviewResponse(BaseModel):
     helpful_count: int = 0
     created_at: datetime
     updated_at: Optional[datetime] = None
-    
-    class Config:
-        from_attributes = True
 
 
 class CourseProgress(BaseModel):

@@ -1,6 +1,7 @@
 # File: app/core/security.py
 
 from datetime import datetime, timedelta
+import uuid
 from typing import Any, Dict, Optional, Union
 
 from fastapi import HTTPException, status
@@ -53,7 +54,8 @@ class SecurityManager:
         to_encode.update({
             "exp": expire,
             "iat": datetime.utcnow(),
-            "type": "access"
+            "type": "access",
+            "jti": str(uuid.uuid4())
         })
         
         encoded_jwt = jwt.encode(
@@ -82,7 +84,8 @@ class SecurityManager:
         to_encode.update({
             "exp": expire,
             "iat": datetime.utcnow(),
-            "type": "refresh"
+            "type": "refresh",
+            "jti": str(uuid.uuid4())
         })
         
         encoded_jwt = jwt.encode(
@@ -162,6 +165,22 @@ class SecurityManager:
         
         return payload
     
+    def create_password_reset_token(
+        self,
+        user_id: int,
+        expires_minutes: int = 30
+    ) -> str:
+        """Create a short-lived password reset token."""
+        expire = datetime.utcnow() + timedelta(minutes=expires_minutes)
+        payload = {
+            "sub": str(user_id),
+            "exp": expire,
+            "iat": datetime.utcnow(),
+            "type": "password_reset",
+            "jti": str(uuid.uuid4())
+        }
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+
     def create_token_pair(self, user_id: int, additional_data: Dict[str, Any] = None) -> Dict[str, str]:
         """Create both access and refresh tokens."""
         token_data = {"sub": str(user_id)}

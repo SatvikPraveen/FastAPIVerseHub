@@ -60,41 +60,51 @@ async def get_redis() -> redis.Redis:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis_client: redis.Redis = Depends(get_redis)
 ) -> User:
     """Dependency to get current authenticated user."""
     try:
         # Verify access token
         payload = security_manager.verify_access_token(credentials.credentials)
         user_id = int(payload.get("sub"))
-        
+
         if user_id is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
+
+        # Check JTI blacklist
+        jti = payload.get("jti")
+        if jti and await redis_client.get(f"blacklist:jti:{jti}"):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         # Get user from database
         from app.services.user_service import UserService
         user_service = UserService(db)
         user = await user_service.get_user_by_id(user_id)
-        
+
         if user is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User not found",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
+
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Inactive user"
             )
-        
+
         return user
-        
+
     except HTTPException:
         raise
     except Exception:
@@ -129,32 +139,28 @@ async def get_current_superuser(
     return current_user
 
 
-def get_current_user_optional(
+async def get_current_user_optional(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
     db: AsyncSession = Depends(get_db)
-):
-    """Optional dependency to get current user if authenticated."""
-    async def _get_user():
-        if not credentials:
+) -> Optional[User]:
+    """Optional dependency — returns current user if token present and valid, else None."""
+    if not credentials:
+        return None
+
+    try:
+        payload = security_manager.verify_access_token(credentials.credentials)
+        user_id_str = payload.get("sub")
+        if user_id_str is None:
             return None
-        
-        try:
-            payload = security_manager.verify_access_token(credentials.credentials)
-            user_id = int(payload.get("sub"))
-            
-            if user_id is None:
-                return None
-            
-            from app.services.user_service import UserService
-            user_service = UserService(db)
-            user = await user_service.get_user_by_id(user_id)
-            
-            return user if user and user.is_active else None
-            
-        except Exception:
-            return None
-    
-    return _get_user
+        user_id = int(user_id_str)
+
+        from app.services.user_service import UserService
+        user_service = UserService(db)
+        user = await user_service.get_user_by_id(user_id)
+        return user if user and user.is_active else None
+
+    except Exception:
+        return None
 
 
 def get_request_id(request: Request) -> str:

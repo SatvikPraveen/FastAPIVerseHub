@@ -27,7 +27,7 @@ async def get_current_user(
     current_user: User = Depends(get_current_active_user)
 ) -> UserResponse:
     """Get current user profile."""
-    return UserResponse.from_orm(current_user)
+    return UserResponse.model_validate(current_user)
 
 
 @router.put("/me", response_model=UserResponse)
@@ -44,7 +44,7 @@ async def update_current_user(
         user_update=user_update
     )
     
-    return UserResponse.from_orm(updated_user)
+    return UserResponse.model_validate(updated_user)
 
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
@@ -78,7 +78,7 @@ async def list_users(
     )
     
     return {
-        "items": [UserResponse.from_orm(user) for user in users],
+        "items": [UserResponse.model_validate(user) for user in users],
         "total": total,
         "skip": pagination.skip,
         "limit": pagination.limit,
@@ -104,7 +104,7 @@ async def create_user(
         )
     
     user = await user_service.create_user(user_create)
-    return UserResponse.from_orm(user)
+    return UserResponse.model_validate(user)
 
 
 @router.get("/{user_id}", response_model=UserResponse)
@@ -130,7 +130,7 @@ async def get_user(
             detail="User not found"
         )
     
-    return UserResponse.from_orm(user)
+    return UserResponse.model_validate(user)
 
 
 @router.put("/{user_id}", response_model=UserResponse)
@@ -168,7 +168,7 @@ async def update_user(
         user_update=user_update
     )
     
-    return UserResponse.from_orm(updated_user)
+    return UserResponse.model_validate(updated_user)
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -226,7 +226,7 @@ async def activate_user(
         user_update=user_update
     )
     
-    return UserResponse.from_orm(updated_user)
+    return UserResponse.model_validate(updated_user)
 
 
 @router.post("/{user_id}/deactivate", response_model=UserResponse)
@@ -264,7 +264,7 @@ async def deactivate_user(
         user_update=user_update
     )
     
-    return UserResponse.from_orm(updated_user)
+    return UserResponse.model_validate(updated_user)
 
 
 @router.get("/{user_id}/stats")

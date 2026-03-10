@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-from pydantic import BaseModel, EmailStr, validator
+from pydantic import BaseModel, EmailStr, field_validator
 
 
 class LoginRequest(BaseModel):
@@ -21,14 +21,9 @@ class UserRegistration(BaseModel):
     full_name: Optional[str] = None
     accept_terms: bool = True
     
-    @validator('confirm_password')
-    def passwords_match(cls, v, values, **kwargs):
-        if 'password' in values and v != values['password']:
-            raise ValueError('Passwords do not match')
-        return v
-    
-    @validator('password')
-    def validate_password(cls, v):
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v: str) -> str:
         if len(v) < 8:
             raise ValueError('Password must be at least 8 characters long')
         if not any(c.isupper() for c in v):
@@ -38,9 +33,17 @@ class UserRegistration(BaseModel):
         if not any(c.isdigit() for c in v):
             raise ValueError('Password must contain at least one digit')
         return v
-    
-    @validator('accept_terms')
-    def terms_must_be_accepted(cls, v):
+
+    @field_validator('confirm_password')
+    @classmethod
+    def passwords_match(cls, v: str, info) -> str:
+        if 'password' in info.data and v != info.data['password']:
+            raise ValueError('Passwords do not match')
+        return v
+
+    @field_validator('accept_terms')
+    @classmethod
+    def terms_must_be_accepted(cls, v: bool) -> bool:
         if not v:
             raise ValueError('Terms and conditions must be accepted')
         return v
@@ -84,16 +87,18 @@ class PasswordResetConfirm(BaseModel):
     new_password: str
     confirm_new_password: str
     
-    @validator('confirm_new_password')
-    def passwords_match(cls, v, values, **kwargs):
-        if 'new_password' in values and v != values['new_password']:
-            raise ValueError('Passwords do not match')
-        return v
-    
-    @validator('new_password')
-    def validate_password(cls, v):
+    @field_validator('new_password')
+    @classmethod
+    def validate_password(cls, v: str) -> str:
         if len(v) < 8:
             raise ValueError('Password must be at least 8 characters long')
+        return v
+
+    @field_validator('confirm_new_password')
+    @classmethod
+    def passwords_match(cls, v: str, info) -> str:
+        if 'new_password' in info.data and v != info.data['new_password']:
+            raise ValueError('Passwords do not match')
         return v
 
 
@@ -103,18 +108,20 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
     confirm_new_password: str
     
-    @validator('confirm_new_password')
-    def passwords_match(cls, v, values, **kwargs):
-        if 'new_password' in values and v != values['new_password']:
-            raise ValueError('New passwords do not match')
-        return v
-    
-    @validator('new_password')
-    def validate_new_password(cls, v, values, **kwargs):
-        if 'current_password' in values and v == values['current_password']:
+    @field_validator('new_password')
+    @classmethod
+    def validate_new_password(cls, v: str, info) -> str:
+        if 'current_password' in info.data and v == info.data['current_password']:
             raise ValueError('New password must be different from current password')
         if len(v) < 8:
             raise ValueError('Password must be at least 8 characters long')
+        return v
+
+    @field_validator('confirm_new_password')
+    @classmethod
+    def passwords_match(cls, v: str, info) -> str:
+        if 'new_password' in info.data and v != info.data['new_password']:
+            raise ValueError('New passwords do not match')
         return v
 
 

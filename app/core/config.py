@@ -2,14 +2,21 @@
 
 import os
 from functools import lru_cache
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from pydantic import BaseSettings, EmailStr, validator
+from pydantic import EmailStr, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings and configuration."""
-    
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore",
+    )
+
     # Application
     APP_NAME: str = "FastAPIVerseHub"
     APP_VERSION: str = "1.0.0"
@@ -19,7 +26,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     
     # Database
-    DATABASE_URL: str
+    DATABASE_URL: Optional[str] = None
     DATABASE_HOST: str = "localhost"
     DATABASE_PORT: int = 5432
     DATABASE_NAME: str = "fastapi_db"
@@ -27,13 +34,13 @@ class Settings(BaseSettings):
     DATABASE_PASSWORD: str = "fastapi_pass"
     
     # Redis
-    REDIS_URL: str = "redis://localhost:6379"
+    REDIS_URL: Optional[str] = None
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     
     # JWT & Security
-    JWT_SECRET_KEY: str
+    JWT_SECRET_KEY: str = "change-me-in-production-use-a-long-random-string"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -81,31 +88,30 @@ class Settings(BaseSettings):
     PROMETHEUS_ENABLED: bool = True
     HEALTH_CHECK_TIMEOUT: int = 5
     
-    @validator("DATABASE_URL", pre=True)
-    def build_database_url(cls, v: Optional[str], values: dict) -> str:
-        """Build database URL from components if not provided."""
-        if v:
-            return v
-        
-        user = values.get("DATABASE_USER", "fastapi_user")
-        password = values.get("DATABASE_PASSWORD", "fastapi_pass")
-        host = values.get("DATABASE_HOST", "localhost")
-        port = values.get("DATABASE_PORT", 5432)
-        database = values.get("DATABASE_NAME", "fastapi_db")
-        
-        return f"postgresql://{user}:{password}@{host}:{port}/{database}"
-    
-    @validator("REDIS_URL", pre=True)
-    def build_redis_url(cls, v: Optional[str], values: dict) -> str:
-        """Build Redis URL from components if not provided."""
-        if v:
-            return v
-        
-        host = values.get("REDIS_HOST", "localhost")
-        port = values.get("REDIS_PORT", 6379)
-        db = values.get("REDIS_DB", 0)
-        
-        return f"redis://{host}:{port}/{db}"
+    @model_validator(mode="before")
+    @classmethod
+    def build_urls(cls, values: Any) -> Any:
+        """Build DATABASE_URL and REDIS_URL from components if not explicitly set."""
+        if not isinstance(values, dict):
+            return values
+
+        if not values.get("DATABASE_URL"):
+            user = values.get("DATABASE_USER", "fastapi_user")
+            password = values.get("DATABASE_PASSWORD", "fastapi_pass")
+            host = values.get("DATABASE_HOST", "localhost")
+            port = values.get("DATABASE_PORT", 5432)
+            database = values.get("DATABASE_NAME", "fastapi_db")
+            values["DATABASE_URL"] = (
+                f"postgresql://{user}:{password}@{host}:{port}/{database}"
+            )
+
+        if not values.get("REDIS_URL"):
+            host = values.get("REDIS_HOST", "localhost")
+            port = values.get("REDIS_PORT", 6379)
+            db = values.get("REDIS_DB", 0)
+            values["REDIS_URL"] = f"redis://{host}:{port}/{db}"
+
+        return values
     
     @property
     def cors_origins_list(self) -> List[str]:
@@ -131,10 +137,6 @@ class Settings(BaseSettings):
         log_dir = os.path.dirname(self.LOG_FILE)
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
 
 
 @lru_cache()

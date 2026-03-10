@@ -52,17 +52,17 @@ class UserService:
         user = await self.get_user_by_id(user_id)
         if not user:
             raise ValueError("User not found")
-        
-        update_data = user_update.dict(exclude_unset=True)
-        
+
+        update_data = user_update.model_dump(exclude_unset=True)
+
         for field, value in update_data.items():
             setattr(user, field, value)
-        
+
         user.updated_at = datetime.utcnow()
-        
+
         await self.db.commit()
         await self.db.refresh(user)
-        
+
         return user
     
     async def delete_user(self, user_id: int) -> bool:
@@ -153,37 +153,51 @@ class UserService:
         return result.rowcount > 0
     
     async def get_user_stats(self, user_id: int) -> Dict[str, Any]:
-        """Get comprehensive user statistics."""
+        """Get comprehensive user statistics via real DB queries."""
+        from app.models.course import Enrollment, EnrollmentStatus
+        from app.models.user import FileUpload
+
         user = await self.get_user_by_id(user_id)
         if not user:
             return {}
-        
-        # Calculate account age
+
         account_age_days = (datetime.utcnow() - user.created_at).days
-        
-        # Get course statistics (placeholder queries)
-        # In real implementation, these would join with course/enrollment tables
-        stats = {
-            "total_courses": 0,
-            "completed_courses": 0,
-            "in_progress_courses": 0,
-            "total_uploads": 0,
+
+        # Total enrollments
+        total_q = select(func.count(Enrollment.id)).where(Enrollment.user_id == user_id)
+        total_result = await self.db.execute(total_q)
+        total_courses = total_result.scalar() or 0
+
+        # Completed enrollments
+        completed_q = select(func.count(Enrollment.id)).where(
+            and_(Enrollment.user_id == user_id, Enrollment.status == EnrollmentStatus.COMPLETED)
+        )
+        completed_result = await self.db.execute(completed_q)
+        completed_courses = completed_result.scalar() or 0
+
+        # Non-deleted uploads
+        uploads_q = select(func.count(FileUpload.id)).where(
+            and_(FileUpload.user_id == user_id, FileUpload.is_deleted.is_(False))
+        )
+        uploads_result = await self.db.execute(uploads_q)
+        total_uploads = uploads_result.scalar() or 0
+
+        return {
+            "total_courses": total_courses,
+            "completed_courses": completed_courses,
+            "in_progress_courses": total_courses - completed_courses,
+            "total_uploads": total_uploads,
             "account_age_days": account_age_days,
             "last_activity": user.last_activity_at,
             "login_count": user.login_count,
             "learning_streak_days": 0,
-            "certificates_earned": 0,
+            "certificates_earned": completed_courses,
             "total_study_time_hours": 0,
             "favorite_categories": [],
             "skill_progress": {},
             "achievements": [],
             "social_connections": 0
         }
-        
-        # TODO: Implement actual queries for course data
-        # This would involve joining with enrollment, course, and other related tables
-        
-        return stats
     
     async def search_users(
         self,

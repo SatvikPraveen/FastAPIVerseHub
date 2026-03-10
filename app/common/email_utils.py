@@ -1,15 +1,16 @@
 # File: app/common/email_utils.py
 
-import smtplib
 import logging
 from datetime import datetime
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from email import encoders
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-from jinja2 import Environment, FileSystemLoader, Template
+
+import aiosmtplib
+from jinja2 import Environment, FileSystemLoader
 
 from app.core.config import settings
 
@@ -71,16 +72,17 @@ class EmailService:
             
             # Send email
             all_recipients = to_emails + (cc_emails or []) + (bcc_emails or [])
-            
-            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
-                if self.use_tls:
-                    server.starttls()
-                
-                if self.username and self.password:
-                    server.login(self.username, self.password)
-                
-                server.send_message(msg, to_addrs=all_recipients)
-            
+
+            await aiosmtplib.send(
+                msg,
+                hostname=self.smtp_server,
+                port=self.smtp_port,
+                username=self.username or None,
+                password=self.password or None,
+                start_tls=self.use_tls,
+                recipients=all_recipients,
+            )
+
             logger.info(f"Email sent successfully to {len(all_recipients)} recipients")
             return True
             

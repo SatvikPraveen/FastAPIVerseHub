@@ -17,8 +17,10 @@ from sqlalchemy.pool import StaticPool
 from app.main import app
 from app.core.dependencies import get_db, get_redis
 from app.core.security import security_manager
-from app.models.user import User, Base
+from app.models.base import Base
+from app.models.user import User
 from app.models.course import Course
+import app.models  # noqa: F401 — registers all model classes on the shared Base metadata
 
 
 # Test database URL (SQLite in-memory for fast testing)

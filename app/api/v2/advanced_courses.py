@@ -101,7 +101,7 @@ async def get_custom_recommendations(
     
     return {
         "recommendations": recommendations,
-        "criteria": request.dict(),
+        "criteria": request.model_dump(),
         "total_found": len(recommendations)
     }
 
@@ -193,7 +193,7 @@ async def create_custom_learning_path(
 @router.get("/analytics/{course_id}")
 async def get_course_analytics(
     course_id: int,
-    time_range: str = Query("30d", regex="^(7d|30d|90d|1y)$"),
+    time_range: str = Query("30d", pattern="^(7d|30d|90d|1y)$"),
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ) -> CourseAnalytics:

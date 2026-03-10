@@ -1,7 +1,6 @@
 # File: app/common/cache_utils.py
 
 import json
-import pickle
 from datetime import datetime, timedelta
 from typing import Any, Optional, Union, Dict, List
 from functools import wraps
@@ -23,50 +22,36 @@ class CacheManager:
             self.redis_client = redis.from_url(
                 settings.REDIS_URL,
                 encoding="utf-8",
-                decode_responses=False
+                decode_responses=True
             )
         return self.redis_client
     
     async def set(
-        self, 
-        key: str, 
-        value: Any, 
+        self,
+        key: str,
+        value: Any,
         ttl: Optional[int] = None,
-        serialize: str = "json"
     ) -> bool:
-        """Set cache value with optional TTL."""
+        """Set cache value with optional TTL (JSON-serialised)."""
         client = await self.get_redis()
-        
-        if serialize == "json":
-            serialized_value = json.dumps(value, default=str)
-        elif serialize == "pickle":
-            serialized_value = pickle.dumps(value)
-        else:
-            serialized_value = str(value)
-        
+        serialized_value = json.dumps(value, default=str)
         ttl = ttl or self.default_ttl
         return await client.setex(key, ttl, serialized_value)
     
     async def get(
-        self, 
-        key: str, 
+        self,
+        key: str,
         default: Any = None,
-        serialize: str = "json"
     ) -> Any:
-        """Get cache value with deserialization."""
+        """Get cache value and JSON-deserialise it."""
         client = await self.get_redis()
         value = await client.get(key)
-        
+
         if value is None:
             return default
-        
+
         try:
-            if serialize == "json":
-                return json.loads(value)
-            elif serialize == "pickle":
-                return pickle.loads(value)
-            else:
-                return value.decode() if isinstance(value, bytes) else value
+            return json.loads(value)
         except Exception:
             return default
     

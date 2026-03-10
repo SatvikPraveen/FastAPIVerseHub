@@ -5,7 +5,7 @@ from datetime import datetime, date
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
-from pydantic import validator, ValidationError
+from pydantic import ValidationError
 
 
 class ValidationUtils:

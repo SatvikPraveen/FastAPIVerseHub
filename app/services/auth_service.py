@@ -1,10 +1,9 @@
-# Auth services - TODO: Implement business logic
-# File: app/services/auth_service.py
-
+import json
 import secrets
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 
+import redis.asyncio as aioredis
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,12 +12,15 @@ from app.models.user import User, DeviceRegistration, UserSession
 from app.schemas.auth import UserRegistration
 from app.common.email_utils import EmailService
 
+MFA_SETUP_TTL_SECONDS = 300  # 5 minutes
+
 
 class AuthService:
     """Authentication service for user management."""
-    
-    def __init__(self, db: AsyncSession):
+
+    def __init__(self, db: AsyncSession, redis: Optional[aioredis.Redis] = None):
         self.db = db
+        self.redis = redis
         self.email_service = EmailService()
     
     async def create_user(self, user_data: UserRegistration) -> User:
@@ -95,32 +97,29 @@ class AuthService:
         await self.db.commit()
     
     async def setup_mfa(self, user_id: int, secret: str, backup_codes: List[str]) -> Dict[str, Any]:
-        """Setup MFA for user (temporary storage)."""
-        # In a real implementation, you might store this in Redis or a temporary table
-        mfa_setup = {
+        """Store MFA setup data temporarily in Redis (expires in 5 minutes)."""
+        mfa_data = {
             "user_id": user_id,
             "secret": secret,
             "backup_codes": backup_codes,
-            "created_at": datetime.utcnow()
+            "created_at": datetime.utcnow().isoformat()
         }
-        
-        # Store in cache/temporary storage
-        # await cache.set(f"mfa_setup:{user_id}", mfa_setup, expire=300)
-        
-        return mfa_setup
-    
+        if self.redis:
+            await self.redis.setex(
+                f"mfa_setup:{user_id}",
+                MFA_SETUP_TTL_SECONDS,
+                json.dumps(mfa_data)
+            )
+        return mfa_data
+
     async def get_mfa_setup(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """Get MFA setup data."""
-        # Retrieve from cache/temporary storage
-        # return await cache.get(f"mfa_setup:{user_id}")
-        
-        # For now, return dummy data
-        return {
-            "user_id": user_id,
-            "secret": "DUMMY_SECRET",
-            "backup_codes": ["12345678", "87654321"],
-            "created_at": datetime.utcnow()
-        }
+        """Retrieve MFA setup data from Redis."""
+        if not self.redis:
+            return None
+        raw = await self.redis.get(f"mfa_setup:{user_id}")
+        if not raw:
+            return None
+        return json.loads(raw)
     
     async def enable_mfa(self, user_id: int, secret: str, backup_codes: List[str]) -> None:
         """Enable MFA for user."""

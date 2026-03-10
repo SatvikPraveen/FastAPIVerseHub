@@ -99,7 +99,7 @@ async def sse_endpoint(
     request: Request,
     channels: Optional[str] = Query(None, description="Comma-separated list of channels to subscribe to"),
     last_event_id: Optional[str] = Query(None, description="Last event ID for resuming stream"),
-    current_user: Optional[User] = Depends(get_current_user_optional())
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ) -> EventSourceResponse:
     """Server-Sent Events endpoint."""
     user_id = current_user.id if current_user else None
@@ -119,7 +119,7 @@ async def sse_endpoint(
 async def publish_to_channel(
     channel: str,
     message: dict,
-    current_user: User = Depends(get_current_user_optional()),
+    current_user: User = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db)
 ) -> dict:
     """Publish message to SSE channel."""
@@ -148,7 +148,7 @@ async def publish_to_channel(
 async def notify_user_sse(
     user_id: int,
     notification: dict,
-    current_user: User = Depends(get_current_user_optional()),
+    current_user: User = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db)
 ) -> dict:
     """Send notification to specific user via SSE."""
@@ -179,7 +179,7 @@ async def notify_user_sse(
 async def broadcast_message(
     message: dict,
     channels: Optional[str] = Query(None, description="Comma-separated list of channels"),
-    current_user: User = Depends(get_current_user_optional())
+    current_user: User = Depends(get_current_user_optional)
 ) -> dict:
     """Broadcast message to multiple channels."""
     event_data = {
@@ -247,7 +247,7 @@ async def list_active_channels() -> dict:
 @router.delete("/channels/{channel}")
 async def clear_channel(
     channel: str,
-    current_user: User = Depends(get_current_user_optional())
+    current_user: User = Depends(get_current_user_optional)
 ) -> dict:
     """Clear all messages from a channel (admin only)."""
     # In a real application, you might want to add admin-only permission check

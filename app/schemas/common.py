@@ -4,12 +4,11 @@ from datetime import datetime
 from typing import Generic, List, Optional, TypeVar, Any, Dict
 
 from pydantic import BaseModel, Field
-from pydantic.generics import GenericModel
 
 T = TypeVar('T')
 
 
-class PaginatedResponse(GenericModel, Generic[T]):
+class PaginatedResponse(BaseModel, Generic[T]):
     """Generic paginated response schema."""
     items: List[T]
     total: int
