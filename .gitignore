@@ -225,3 +225,5 @@ grafana_data/
 
 # pyright
 pyrightconfig.json
+# Personal Claude Code overrides
+.claude/settings.local.json
