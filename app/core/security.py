@@ -182,17 +182,38 @@ class SecurityManager:
 
         return payload
 
-    def create_password_reset_token(self, user_id: int, expires_minutes: int = 30) -> str:
-        """Create a short-lived password reset token."""
-        expire = datetime.now(UTC) + timedelta(minutes=expires_minutes)
+    def create_special_token(self, user_id: int, token_type: str, expires_minutes: int) -> str:
+        """Create a short-lived, single-purpose token (reset, magic link, MFA step).
+
+        ``token_type`` is anything but ``access``/``refresh`` so these tokens can
+        never be presented as credentials to protected endpoints.
+        """
+        if token_type in {"access", "refresh"}:
+            raise ValueError("use create_access_token / create_refresh_token")
+        now = datetime.now(UTC)
         payload = {
             "sub": str(user_id),
-            "exp": expire,
-            "iat": datetime.now(UTC),
-            "type": "password_reset",
+            "exp": now + timedelta(minutes=expires_minutes),
+            "iat": now,
+            "type": token_type,
             "jti": str(uuid.uuid4()),
         }
         return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+
+    def verify_special_token(self, token: str, token_type: str) -> dict[str, Any]:
+        """Verify a token created by :meth:`create_special_token` of the given type."""
+        payload = self.verify_token(token)
+        if payload.get("type") != token_type:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return payload
+
+    def create_password_reset_token(self, user_id: int, expires_minutes: int = 30) -> str:
+        """Create a short-lived password reset token."""
+        return self.create_special_token(user_id, "password_reset", expires_minutes)
 
     def create_token_pair(
         self, user_id: int, additional_data: dict[str, Any] | None = None

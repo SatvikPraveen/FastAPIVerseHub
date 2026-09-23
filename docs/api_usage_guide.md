@@ -459,6 +459,13 @@ Import the provided Postman collection for easy API testing:
 
 1. Register user → `POST /api/v1/auth/register`
 2. Login → `POST /api/v1/auth/login`
+   - Keep both tokens. Access tokens expire after `ACCESS_TOKEN_EXPIRE_MINUTES`.
+   - Refresh with `POST /api/v1/auth/refresh` `{"refresh_token": "..."}`: you get a
+     **new** pair and the old refresh token stops working. Reusing an old one
+     revokes the whole session family (theft protection), so always store the
+     latest token.
+   - `POST /api/v1/auth/logout` with `{"refresh_token": "..."}` ends the session;
+     `POST /api/v1/auth/logout-all` signs out every device.
 3. Get profile → `GET /api/v1/users/me`
 4. Update profile → `PUT /api/v1/users/me`
 

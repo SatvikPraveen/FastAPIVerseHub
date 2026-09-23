@@ -1,5 +1,6 @@
 # File: app/services/course_service.py
 
+import re
 from typing import Any
 
 from sqlalchemy import and_, delete, func, or_, select, update
@@ -32,7 +33,7 @@ class CourseService:
     async def create_course(self, course_create: CourseCreate, instructor_id: int) -> Course:
         """Create a new course."""
         # Generate slug from title
-        slug = self._generate_slug(course_create.title)
+        slug = await self._unique_slug(course_create.title)
 
         course = Course(
             title=course_create.title,
@@ -69,7 +70,9 @@ class CourseService:
 
         # Update slug if title changed
         if "title" in update_data:
-            update_data["slug"] = self._generate_slug(update_data["title"])
+            update_data["slug"] = await self._unique_slug(
+                update_data["title"], exclude_course_id=course_id
+            )
 
         for field, value in update_data.items():
             setattr(course, field, value)
@@ -328,15 +331,29 @@ class CourseService:
             for category in categories
         ]
 
-    def _generate_slug(self, title: str) -> str:
-        """Generate URL-friendly slug from title."""
-        import re
+    @staticmethod
+    def slugify(title: str) -> str:
+        """URL-friendly slug for a title (no uniqueness guarantee)."""
+        slug = re.sub(r"[^\w\s-]", "", title.lower())
+        slug = re.sub(r"[\s_-]+", "-", slug).strip("-")
+        return slug or "course"
 
-        slug = title.lower()
-        slug = re.sub(r"[^\w\s-]", "", slug)
-        slug = re.sub(r"[\s_-]+", "-", slug)
-        slug = slug.strip("-")
+    async def _unique_slug(self, title: str, exclude_course_id: int | None = None) -> str:
+        """Return ``slug``, or ``slug-2``, ``slug-3``... until one is free.
 
-        # Add timestamp to ensure uniqueness
-        timestamp = str(int(utcnow().timestamp()))[-4:]
-        return f"{slug}-{timestamp}"
+        Checked against the database rather than salted with a timestamp, so
+        URLs stay readable and two creations in the same second cannot collide.
+        """
+        base = self.slugify(title)[:240]
+        taken_rows = await self.db.execute(
+            select(Course.id, Course.slug).where(
+                or_(Course.slug == base, Course.slug.like(f"{base}-%"))
+            )
+        )
+        taken = {slug for cid, slug in taken_rows.all() if cid != exclude_course_id}
+        if base not in taken:
+            return base
+        counter = 2
+        while f"{base}-{counter}" in taken:
+            counter += 1
+        return f"{base}-{counter}"

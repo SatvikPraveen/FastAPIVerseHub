@@ -3,17 +3,20 @@ import secrets
 from datetime import timedelta
 from typing import Any
 
+import httpx
 import redis.asyncio as aioredis
 from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.email_utils import EmailService
+from app.core.config import settings
 from app.core.security import security_manager
 from app.core.time import utcnow
 from app.models.user import DeviceRegistration, User, UserSession
 from app.schemas.auth import UserRegistration
 
 MFA_SETUP_TTL_SECONDS = 300  # 5 minutes
+SOCIAL_HTTP_TIMEOUT = 5.0  # seconds per provider call
 
 
 class AuthService:
@@ -98,8 +101,8 @@ class AuthService:
             "created_at": utcnow().isoformat(),
         }
         if self.redis:
-            await self.redis.setex(
-                f"mfa_setup:{user_id}", MFA_SETUP_TTL_SECONDS, json.dumps(mfa_data)
+            await self.redis.set(
+                f"mfa_setup:{user_id}", json.dumps(mfa_data), ex=MFA_SETUP_TTL_SECONDS
             )
         return mfa_data
 
@@ -194,49 +197,103 @@ class AuthService:
         await self.db.execute(query)
         await self.db.commit()
 
+    async def _get_json(
+        self, url: str, headers: dict[str, str] | None = None, params: dict[str, str] | None = None
+    ) -> Any:
+        """GET ``url`` and return the decoded JSON body, or ``None`` on any failure."""
+        try:
+            async with httpx.AsyncClient(timeout=SOCIAL_HTTP_TIMEOUT) as client:
+                response = await client.get(url, headers=headers, params=params)
+            if response.status_code != 200:
+                return None
+            return response.json()
+        except (httpx.HTTPError, ValueError):
+            return None
+
     async def verify_social_token(
         self, provider: str, access_token: str, id_token: str | None = None
     ) -> dict[str, Any] | None:
-        """Verify social authentication token."""
-        # Implementation would depend on the social provider
-        # This is a placeholder for the actual verification logic
+        """Verify a provider-issued token and return a normalised identity.
 
+        Returns ``{"id", "email", "name", "picture"}`` or ``None`` when the
+        provider rejects the token, the provider is not configured, or the
+        account has no verified email.
+        """
+        if provider not in settings.enabled_social_providers:
+            return None
         if provider == "google":
             return await self._verify_google_token(access_token, id_token)
-        elif provider == "github":
+        if provider == "github":
             return await self._verify_github_token(access_token)
-        elif provider == "linkedin":
+        if provider == "linkedin":
             return await self._verify_linkedin_token(access_token)
-
         return None
 
     async def _verify_google_token(
         self, access_token: str, id_token: str | None = None
     ) -> dict[str, Any] | None:
-        """Verify Google OAuth token."""
-        # Placeholder implementation
-        # In real implementation, verify with Google's API
+        """Prefer the ID token (audience-checked); fall back to the userinfo endpoint."""
+        if id_token:
+            info = await self._get_json(
+                "https://oauth2.googleapis.com/tokeninfo", params={"id_token": id_token}
+            )
+            if not info or info.get("aud") != settings.GOOGLE_CLIENT_ID:
+                return None
+        else:
+            info = await self._get_json(
+                "https://www.googleapis.com/oauth2/v3/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+        if not info or not info.get("sub") or not info.get("email"):
+            return None
+        if str(info.get("email_verified", "false")).lower() not in {"true", "1"}:
+            return None
         return {
-            "id": "google_user_id",
-            "email": "user@example.com",
-            "name": "John Doe",
-            "picture": "https://example.com/avatar.jpg",
+            "id": str(info["sub"]),
+            "email": str(info["email"]).lower(),
+            "name": info.get("name"),
+            "picture": info.get("picture"),
         }
 
     async def _verify_github_token(self, access_token: str) -> dict[str, Any] | None:
-        """Verify GitHub OAuth token."""
-        # Placeholder implementation
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/vnd.github+json",
+        }
+        profile = await self._get_json("https://api.github.com/user", headers=headers)
+        if not profile or not profile.get("id"):
+            return None
+        email = profile.get("email")
+        if not email:
+            emails = await self._get_json("https://api.github.com/user/emails", headers=headers)
+            for entry in emails or []:
+                if entry.get("primary") and entry.get("verified"):
+                    email = entry.get("email")
+                    break
+        if not email:
+            return None
         return {
-            "id": "github_user_id",
-            "email": "user@example.com",
-            "name": "John Doe",
-            "avatar_url": "https://example.com/avatar.jpg",
+            "id": str(profile["id"]),
+            "email": str(email).lower(),
+            "name": profile.get("name") or profile.get("login"),
+            "picture": profile.get("avatar_url"),
         }
 
     async def _verify_linkedin_token(self, access_token: str) -> dict[str, Any] | None:
-        """Verify LinkedIn OAuth token."""
-        # Placeholder implementation
-        return {"id": "linkedin_user_id", "email": "user@example.com", "name": "John Doe"}
+        info = await self._get_json(
+            "https://api.linkedin.com/v2/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        if not info or not info.get("sub") or not info.get("email"):
+            return None
+        if not info.get("email_verified", True):
+            return None
+        return {
+            "id": str(info["sub"]),
+            "email": str(info["email"]).lower(),
+            "name": info.get("name"),
+            "picture": info.get("picture"),
+        }
 
     async def get_or_create_social_user(
         self,
@@ -283,7 +340,7 @@ class AuthService:
 
     async def send_magic_link_email(self, email: str, token: str) -> None:
         """Send magic link via email."""
-        magic_link = f"https://example.com/auth/magic-link?token={token}"
+        magic_link = f"{settings.FRONTEND_URL.rstrip('/')}/auth/magic-link?token={token}"
 
         await self.email_service.send_magic_link_email(email, magic_link)
 

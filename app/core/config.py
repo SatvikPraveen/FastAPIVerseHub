@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: SecretStr | None = None
     GITHUB_CLIENT_ID: str | None = None
     GITHUB_CLIENT_SECRET: SecretStr | None = None
+    LINKEDIN_CLIENT_ID: str | None = None
+    LINKEDIN_CLIENT_SECRET: SecretStr | None = None
 
     # Email
     EMAIL_HOST: str = "localhost"
@@ -170,6 +172,18 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production"
+
+    @property
+    def enabled_social_providers(self) -> set[str]:
+        """Providers with a client id configured; others are refused outright."""
+        enabled = set()
+        if self.GOOGLE_CLIENT_ID:
+            enabled.add("google")
+        if self.GITHUB_CLIENT_ID:
+            enabled.add("github")
+        if self.LINKEDIN_CLIENT_ID:
+            enabled.add("linkedin")
+        return enabled
 
     @property
     def async_database_url(self) -> str:

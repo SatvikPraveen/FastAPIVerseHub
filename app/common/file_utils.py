@@ -36,7 +36,7 @@ class FileManager:
         # Check file size
         if file.size and file.size > self.max_file_size:
             raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 detail=f"File size {file.size} exceeds maximum allowed size {self.max_file_size}",
             )
 

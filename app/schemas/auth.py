@@ -52,9 +52,13 @@ class UserRegistration(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    """Schema for authentication token response."""
+    """Schema for authentication token response.
 
-    access_token: str
+    ``access_token`` is ``None`` only for MFA-pending responses, which carry
+    a ``partial_token`` instead.
+    """
+
+    access_token: str | None = None
     refresh_token: str | None = None
     token_type: str = "bearer"
     expires_in: int | None = None

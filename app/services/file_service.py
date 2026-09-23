@@ -158,7 +158,7 @@ class FileService:
             select(FileUpload.category, func.count(FileUpload.id))
             .where(and_(FileUpload.user_id == user_id, FileUpload.is_deleted.is_(False)))
             .group_by(FileUpload.category)
-            .order_by(func.count(FileUpload.id).desc())
+            .order_by(func.count(FileUpload.id).desc(), FileUpload.category.asc())
         )
         result = await self.db.execute(query)
         return [{"name": name or "general", "count": count} for name, count in result.all()]

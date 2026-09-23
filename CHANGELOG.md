@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Refresh-token rotation with reuse detection: every refresh token is
+  recorded (hashed) with its family and lineage; replaying a rotated token
+  revokes the whole family. `POST /auth/logout` accepts the refresh token,
+  `POST /auth/logout-all` revokes every device.
+- Welcome and password-reset emails are dispatched as background tasks;
+  `FRONTEND_URL` controls the links they contain.
 - Liveness (`/health/live`) and readiness (`/health/ready`) probes; readiness
   checks PostgreSQL and Redis with timeouts and returns 503 when degraded.
 - Prometheus `/metrics` endpoint with request counter, latency histogram,
@@ -49,6 +55,17 @@ All notable changes to this project are documented here. The format follows
   per-test timeout.
 
 ### Fixed
+- Social login accepted *any* token: the provider verifiers were placeholders
+  returning a fixed identity. They now call Google/GitHub/LinkedIn, check the
+  Google ID-token audience, require verified emails, and providers without a
+  configured client id are refused.
+- MFA setup never persisted its secret (service built without Redis), so
+  verification always failed; the MFA-pending "partial token" was a valid
+  access token. Single-purpose tokens (magic link, MFA step, reset) now carry
+  their own type and are rejected by protected endpoints.
+- Magic-link verification compared against a type the token never had.
+- Course slugs used a timestamp salt that collided within the same second;
+  uniqueness is now checked against the database.
 - The application did not import: a truncated exception module, unfinished
   Pydantic v2 migration, missing dependencies (`itsdangerous`, `greenlet`),
   an ambiguous `RefreshToken.user` relationship.

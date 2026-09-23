@@ -8,11 +8,13 @@ from typing import Any
 
 import pyotp
 import qrcode
+import redis.asyncio as redis
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.dependencies import (
     get_client_ip,
     get_current_active_user,
@@ -78,9 +80,10 @@ async def setup_mfa(
     request: MFASetupRequest,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
+    redis_client: redis.Redis = Depends(get_redis),
 ) -> dict[str, Any]:
     """Setup multi-factor authentication."""
-    auth_service = AuthService(db)
+    auth_service = AuthService(db, redis=redis_client)
 
     # Verify password
     if not security_manager.verify_password(request.password, current_user.hashed_password):
@@ -128,9 +131,10 @@ async def verify_mfa_setup(
     request: MFAVerifyRequest,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
+    redis_client: redis.Redis = Depends(get_redis),
 ) -> dict[str, str]:
     """Verify and enable MFA."""
-    auth_service = AuthService(db)
+    auth_service = AuthService(db, redis=redis_client)
 
     if current_user.mfa_enabled:
         raise HTTPException(
@@ -163,9 +167,10 @@ async def disable_mfa(
     request: MFAVerifyRequest,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
+    redis_client: redis.Redis = Depends(get_redis),
 ) -> dict[str, str]:
     """Disable MFA."""
-    auth_service = AuthService(db)
+    auth_service = AuthService(db, redis=redis_client)
 
     if not current_user.mfa_enabled:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="MFA is not enabled")
@@ -215,9 +220,7 @@ async def login_with_mfa(
     if user.mfa_enabled:
         if not mfa_token and not backup_code:
             # Return partial token for MFA verification
-            partial_token = security_manager.create_access_token(
-                data={"sub": str(user.id), "mfa_pending": True}, expires_delta=timedelta(minutes=5)
-            )
+            partial_token = security_manager.create_special_token(user.id, "mfa_pending", 5)
             return {
                 "requires_mfa": True,
                 "partial_token": partial_token,
@@ -325,6 +328,12 @@ async def social_auth(
     """Authenticate with social provider."""
     auth_service = AuthService(db)
 
+    if request.provider not in settings.enabled_social_providers:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Social provider '{request.provider}' is not configured",
+        )
+
     # Verify social token and get user info
     user_info = await auth_service.verify_social_token(
         provider=request.provider, access_token=request.access_token, id_token=request.id_token
@@ -376,9 +385,7 @@ async def request_passwordless_auth(
         return {"message": "If the email exists, an authentication link has been sent"}
 
     # Generate magic link token
-    magic_token = security_manager.create_access_token(
-        data={"sub": str(user.id), "type": "magic_link"}, expires_delta=timedelta(minutes=15)
-    )
+    magic_token = security_manager.create_special_token(user.id, "magic_link", 15)
 
     if request.method == "email":
         # Send magic link via email
@@ -400,13 +407,7 @@ async def verify_magic_link(
 ) -> dict[str, Any]:
     """Verify magic link token."""
     try:
-        payload = security_manager.verify_token(request.token)
-
-        if payload.get("type") != "magic_link":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token type"
-            )
-
+        payload = security_manager.verify_special_token(request.token, "magic_link")
         user_id = security_manager.subject_id(payload)
         auth_service = AuthService(db)
         user = await auth_service.get_user_by_id(user_id)
