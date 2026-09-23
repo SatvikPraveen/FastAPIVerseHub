@@ -181,7 +181,6 @@ temp/
 *.old
 
 # Alembic
-alembic.ini
 
 # Testing
 .coverage
