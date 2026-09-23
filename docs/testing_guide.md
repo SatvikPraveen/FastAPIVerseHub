@@ -34,92 +34,53 @@ app/tests/
 
 ## Test Configuration (conftest.py)
 
+The real fixtures live in `app/tests/conftest.py`. The important design points:
+
 ```python
-import pytest
-import pytest_asyncio
-from httpx import AsyncClient
-from sqlalchemy import create_engine
-from sqlalchemy.pool import StaticPool
-from sqlalchemy.orm import sessionmaker
-from fastapi.testclient import TestClient
-
-from app.main import app
-from app.core.dependencies import get_db
-from app.core.config import settings
-from app.models.base import Base
-from app.models.user import User
-from app.core.security import create_access_token
-
-# Test database URL
-SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test.db"
-
-engine = create_engine(
-    SQLALCHEMY_TEST_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-@pytest.fixture(scope="session")
-def setup_test_db():
-    """Create test database"""
-    Base.metadata.create_all(bind=engine)
-    yield
-    Base.metadata.drop_all(bind=engine)
-
-@pytest.fixture
-def db_session(setup_test_db):
-    """Create database session for testing"""
-    session = TestingSessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
-
-def override_get_db(db_session):
-    """Override database dependency"""
-    def _override_get_db():
-        try:
-            yield db_session
-        finally:
-            pass
-    return _override_get_db
+# Async SQLite in memory, fresh schema per test
+test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", poolclass=StaticPool, ...)
 
 @pytest_asyncio.fixture
-async def async_client(db_session):
-    """Async test client"""
-    app.dependency_overrides[get_db] = override_get_db(db_session)
-    async with AsyncClient(app=app, base_url="http://test") as client:
+async def db_session():
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with TestingSessionLocal() as session:
+        yield session
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+# Real Redis semantics without a server: fakeredis, bound to the shared
+# cache manager so middleware (rate limiting) and dependencies see one store
+@pytest_asyncio.fixture
+async def mock_redis():
+    client = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    cache_manager.bind(client)
+    yield client
+    await client.flushall(); cache_manager.bind(None); await client.aclose()
+
+# In-process HTTP client; raise_app_exceptions=False so 500 envelopes are testable
+@pytest_asyncio.fixture
+async def async_client(db_session, mock_redis):
+    app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_redis] = lambda: mock_redis
+    async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False),
+                           base_url="http://test") as client:
         yield client
     app.dependency_overrides.clear()
-
-@pytest.fixture
-def test_user_data():
-    """Sample user data"""
-    return {
-        "email": "test@example.com",
-        "password": "testpass123",
-        "full_name": "Test User"
-    }
-
-@pytest_asyncio.fixture
-async def authenticated_client(async_client, db_session, test_user_data):
-    """Authenticated test client"""
-    # Create test user
-    response = await async_client.post("/api/v1/auth/register", json=test_user_data)
-    assert response.status_code == 201
-
-    # Login to get token
-    response = await async_client.post(
-        "/api/v1/auth/token",
-        data={"username": test_user_data["email"], "password": test_user_data["password"]}
-    )
-    token = response.json()["access_token"]
-
-    # Set authorization header
-    async_client.headers.update({"Authorization": f"Bearer {token}"})
-    return async_client
 ```
+
+Notes:
+
+- `import app.models` must precede `from app.main import app`; the package
+  import binds the name `app`, the second import rebinds it to the FastAPI
+  instance.
+- `httpx.ASGITransport` buffers whole responses, so unbounded SSE streams are
+  tested by driving the generator directly (see `test_sse.py`).
+- Every test has a 60 s timeout (`pytest-timeout`), so a hung stream fails
+  instead of stalling CI.
+- `test_migrations.py` applies the Alembic chain to a scratch database and
+  asserts it matches `Base.metadata`; a model change without a migration
+  fails here.
 
 ## Unit Testing
 
@@ -153,8 +114,8 @@ class TestAuthentication:
 
         # Login
         response = await async_client.post(
-            "/api/v1/auth/token",
-            data={"username": test_user_data["email"], "password": test_user_data["password"]}
+            "/api/v1/auth/login",
+            json={"email": test_user_data["email"], "password": test_user_data["password"]}
         )
         assert response.status_code == 200
         data = response.json()
@@ -164,10 +125,11 @@ class TestAuthentication:
     @pytest.mark.asyncio
     async def test_invalid_login(self, async_client):
         response = await async_client.post(
-            "/api/v1/auth/token",
-            data={"username": "invalid@example.com", "password": "wrongpass"}
+            "/api/v1/auth/login",
+            json={"email": "invalid@example.com", "password": "wrongpass"}
         )
         assert response.status_code == 401
+        assert response.json()["error"] == "UNAUTHORIZED"
 
     def test_password_hashing(self):
         password = "testpassword123"
@@ -582,77 +544,39 @@ pytest -k "asyncio"
 pytest --cov=app --cov-report=html
 ```
 
-### Test Configuration (pytest.ini)
+### Test Configuration (pyproject.toml)
 
-```ini
-[tool:pytest]
-testpaths = app/tests
-python_files = test_*.py
-python_classes = Test*
-python_functions = test_*
-asyncio_mode = auto
-markers =
-    slow: marks tests as slow (deselect with '-m "not slow"')
-    integration: marks tests as integration tests
-    unit: marks tests as unit tests
-addopts =
-    --strict-markers
-    --disable-warnings
-    --cov=app
-    --cov-report=term-missing
-    --cov-fail-under=80
+```toml
+[tool.pytest.ini_options]
+testpaths = ["app/tests"]
+asyncio_mode = "auto"
+addopts = ["--strict-markers", "--strict-config", "--timeout=60",
+           "--cov=app", "--cov-report=term-missing", "--cov-fail-under=80"]
+```
+
+Quick commands (see the `Makefile`):
+
+```bash
+make test        # full suite with coverage
+make test-fast   # no coverage, parallel (pytest-xdist)
+make lint        # ruff
+make typecheck   # mypy (zero errors expected)
 ```
 
 ## Continuous Integration
 
-### GitHub Actions Example
+`.github/workflows/ci.yml` runs on every push and pull request:
 
-```yaml
-# .github/workflows/test.yml
-name: Tests
+| Job         | What it checks                                        |
+| ----------- | ----------------------------------------------------- |
+| `lint`      | `ruff check` and `ruff format --check`                |
+| `typecheck` | `mypy app` (blocking)                                 |
+| `test`      | pytest with coverage on Python 3.11 and 3.12          |
+| `docker`    | multi-stage image builds and the app imports inside it|
+| `openapi`   | generates and uploads the OpenAPI spec as an artefact |
 
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:13
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: test_db
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-          pip install pytest pytest-asyncio pytest-cov
-
-      - name: Run tests
-        run: pytest --cov=app --cov-report=xml
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./coverage.xml
-```
+No external services are provisioned: the suite runs on in-memory SQLite and
+fakeredis.
 
 ## Testing Best Practices
 

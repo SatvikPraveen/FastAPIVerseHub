@@ -148,7 +148,7 @@ async def logout(
         if jti and exp:
             ttl = int(exp - utcnow().timestamp())
             if ttl > 0:
-                await redis_client.setex(f"blacklist:jti:{jti}", ttl, "1")
+                await redis_client.set(f"blacklist:jti:{jti}", "1", ex=ttl)
     except Exception:
         pass  # Even if blacklisting fails, proceed with logout response
     return {"message": "Successfully logged out"}

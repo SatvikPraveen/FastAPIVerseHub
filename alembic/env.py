@@ -45,9 +45,13 @@ def get_url() -> str:
     programmatically on the Config (as the migration tests do) wins over the
     application settings.
     """
-    url = config.get_main_option("sqlalchemy.url") or settings.DATABASE_URL or ""
-    # alembic needs +asyncpg driver for async migrations
-    return url.replace("postgresql://", "postgresql+asyncpg://")
+    url = config.get_main_option("sqlalchemy.url") or settings.async_database_url
+    # alembic runs migrations through the async engine: ensure an async driver
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif url.startswith("sqlite://") and "+aiosqlite" not in url:
+        url = url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+    return url
 
 
 def run_migrations_offline() -> None:

@@ -45,9 +45,9 @@ curl -X POST "http://localhost:8000/api/v1/auth/register" \
 ### 2. Login
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/auth/token" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=user@example.com&password=securepassword123"
+curl -X POST "http://localhost:8000/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "securepassword123"}'
 ```
 
 **Response**:
@@ -55,10 +55,14 @@ curl -X POST "http://localhost:8000/api/v1/auth/token" \
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "token_type": "bearer",
-  "expires_in": 3600
+  "user": {"id": 1, "email": "user@example.com", "full_name": "Jane Doe", "is_active": true}
 }
 ```
+
+Every response carries `X-Request-ID`; quote it when reporting a problem. Error
+bodies always look like `{"error": "...", "message": "...", "details": {...}, "request_id": "..."}`.
 
 ### 3. Using the Token
 
@@ -418,9 +422,9 @@ print(response.json())
 
 # Login
 response = requests.post(
-    f"{BASE_URL}/api/v1/auth/token",
-    data={
-        "username": "test@example.com",
+    f"{BASE_URL}/api/v1/auth/login",
+    json={
+        "email": "test@example.com",
         "password": "testpass123"
     }
 )
@@ -454,7 +458,7 @@ Import the provided Postman collection for easy API testing:
 ### 1. User Registration Flow
 
 1. Register user → `POST /api/v1/auth/register`
-2. Login → `POST /api/v1/auth/token`
+2. Login → `POST /api/v1/auth/login`
 3. Get profile → `GET /api/v1/users/me`
 4. Update profile → `PUT /api/v1/users/me`
 

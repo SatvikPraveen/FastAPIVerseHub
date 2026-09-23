@@ -35,13 +35,13 @@ cp .env.example .env
 nano .env
 
 # Start services
-docker-compose up -d
+docker compose up -d
 
 # View logs
-docker-compose logs -f app
+docker compose logs -f app
 
 # Stop services
-docker-compose down
+docker compose down
 ```
 
 ### Production Docker Setup
@@ -565,124 +565,73 @@ data:
 
 ## Monitoring and Observability
 
+Everything below ships with the application; nothing needs to be added.
+
 ### Health Checks
 
-```python
-# Add to app/main.py
-@app.get("/health")
-def health_check():
-    return {
-        "status": "healthy",
-        "timestamp": datetime.utcnow(),
-        "version": "1.0.0"
-    }
+| Endpoint        | Purpose                                            | Failure behaviour |
+| --------------- | -------------------------------------------------- | ----------------- |
+| `/health/live`  | Process is up. Never touches dependencies.         | Restart the pod   |
+| `/health/ready` | PostgreSQL + Redis answer within `HEALTH_CHECK_TIMEOUT` | 503 -> stop routing traffic |
+| `/health`       | Legacy summary with links to both probes           | -                 |
 
-@app.get("/ready")
-async def readiness_check():
-    # Check database connection
-    try:
-        db = next(get_db())
-        db.execute("SELECT 1")
-        db_status = "healthy"
-    except Exception:
-        db_status = "unhealthy"
-
-    # Check Redis connection
-    try:
-        redis_client.ping()
-        redis_status = "healthy"
-    except Exception:
-        redis_status = "unhealthy"
-
-    return {
-        "database": db_status,
-        "redis": redis_status,
-        "status": "ready" if all([db_status == "healthy", redis_status == "healthy"]) else "not_ready"
-    }
+```bash
+curl -s localhost:8000/health/ready | jq
+# {
+#   "status": "ready",
+#   "checks": {
+#     "database": {"status": "ok", "latency_ms": 1.2},
+#     "redis":    {"status": "ok", "latency_ms": 0.4}
+#   },
+#   ...
+# }
 ```
 
-### Logging Configuration
+Kubernetes wiring:
 
-```python
-# app/core/logging.py
-import logging
-import sys
-from typing import Any, Dict
-import json
-import structlog
-
-def setup_logging(level: str = "INFO", json_logs: bool = False):
-    timestamper = structlog.processors.TimeStamper(fmt="ISO")
-
-    shared_processors = [
-        structlog.contextvars.merge_contextvars,
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.PositionalArgumentsFormatter(),
-        timestamper,
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
-    ]
-
-    if json_logs:
-        processors = shared_processors + [structlog.processors.JSONRenderer()]
-    else:
-        processors = shared_processors + [structlog.dev.ConsoleRenderer()]
-
-    structlog.configure(
-        processors=processors,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        wrapper_class=structlog.stdlib.BoundLogger,
-        cache_logger_on_first_use=True,
-    )
-
-    logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stdout,
-        level=getattr(logging, level.upper()),
-    )
+```yaml
+livenessProbe:
+  httpGet: { path: /health/live, port: 8000 }
+  periodSeconds: 10
+readinessProbe:
+  httpGet: { path: /health/ready, port: 8000 }
+  periodSeconds: 5
+  failureThreshold: 3
 ```
+
+### Logging
+
+Logs are structured (structlog). Set `LOG_FORMAT=json` (forced automatically in
+`staging` and `production`) for one JSON object per line:
+
+```json
+{"event": "request completed", "level": "info", "logger": "app.middleware.request_timer",
+ "method": "GET", "path": "/api/v1/courses/", "status": 200, "duration_ms": 12.4,
+ "client_ip": "10.0.0.7", "request_id": "3f1c...", "timestamp": "2026-09-23T12:00:00Z"}
+```
+
+Every line carries `request_id`. Clients and proxies may set `X-Request-ID`
+(8-128 URL-safe characters); the value is echoed back in the response and in
+error bodies. The bundled nginx config forwards its own `$request_id`.
 
 ### Prometheus Metrics
 
-```python
-# app/middleware/metrics.py
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
-import time
+`GET /metrics` exposes:
 
-REQUEST_COUNT = Counter('requests_total', 'Total requests', ['method', 'endpoint', 'status'])
-REQUEST_DURATION = Histogram('request_duration_seconds', 'Request duration')
+| Metric                              | Type      | Labels                    |
+| ----------------------------------- | --------- | ------------------------- |
+| `http_requests_total`               | counter   | method, path, status      |
+| `http_request_duration_seconds`     | histogram | method, path              |
+| `http_requests_in_progress`         | gauge     | method                    |
+| `http_exceptions_total`             | counter   | method, path, exception   |
 
-class MetricsMiddleware:
-    def __init__(self, app):
-        self.app = app
+`path` is the route *template* (`/api/v1/courses/{course_id}`), never the raw
+URL, so cardinality stays bounded. Unmatched routes are labelled `unmatched`.
 
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
-        start_time = time.time()
-
-        async def send_wrapper(message):
-            if message["type"] == "http.response.start":
-                REQUEST_COUNT.labels(
-                    method=scope["method"],
-                    endpoint=scope["path"],
-                    status=message["status"]
-                ).inc()
-
-                REQUEST_DURATION.observe(time.time() - start_time)
-
-            await send(message)
-
-        await self.app(scope, receive, send_wrapper)
-
-@app.get("/metrics")
-def get_metrics():
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
-```
+Locally: `docker compose --profile monitoring up -d` starts Prometheus
+(http://localhost:9090) and Grafana (http://localhost:3001, admin/admin) pre-wired
+to scrape the API. In production restrict `/metrics` to your scrape network
+(the nginx config does this with `allow`/`deny`).
 
 ## Database Management
 

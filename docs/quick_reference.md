@@ -191,18 +191,25 @@ app.add_middleware(
 ### Database Models (SQLAlchemy)
 
 ```python
-from sqlalchemy import Column, Integer, String, DateTime
-from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
 
-Base = declarative_base()
+from sqlalchemy import String
+from sqlalchemy.orm import Mapped, mapped_column
 
-class User(Base):
+from app.models.base import Base, IntPK, TimestampMixin  # shared base + created_at/updated_at
+
+
+class User(TimestampMixin, Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    id: Mapped[IntPK]
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    full_name: Mapped[str | None] = mapped_column(String(255))
+    last_login_at: Mapped[datetime | None]        # aware UTC via UTCDateTime
 ```
+
+Attributes are real Python types to mypy. Use `app.core.time.utcnow()` for
+"now"; never `datetime.utcnow()`.
 
 ## Common Status Codes
 

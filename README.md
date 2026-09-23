@@ -1,14 +1,16 @@
 # FastAPIVerseHub 🚀
 
-**File Location: README.md**
+A production-grade FastAPI code base that doubles as a learning resource: typed
+SQLAlchemy 2.0 models, tested migrations, structured logging with request
+correlation, Prometheus metrics, atomic Redis rate limiting, real-time
+WebSockets/SSE, and a CI pipeline that keeps lint, types and tests green.
 
-A comprehensive FastAPI learning and demonstration project that showcases modern Python web development patterns, best practices, and advanced features. Perfect for learning FastAPI or as a production-ready template.
-
-[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com)
-[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://docker.com)
+[![CI](https://github.com/SatvikPraveen/FastAPIVerseHub/actions/workflows/ci.yml/badge.svg)](https://github.com/SatvikPraveen/FastAPIVerseHub/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue.svg)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-green.svg)](https://fastapi.tiangolo.com)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![mypy](https://img.shields.io/badge/mypy-checked-blue.svg)](https://mypy-lang.org)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-Passing-brightgreen.svg)](#testing)
 
 ## 📋 Table of Contents
 
@@ -29,226 +31,130 @@ A comprehensive FastAPI learning and demonstration project that showcases modern
 - [Learning Resources](#-learning-resources)
 - [Contributing](#-contributing)
 - [Troubleshooting](#-troubleshooting)
+- [Changelog](CHANGELOG.md)
 - [License](#-license)
 
 ## 🚀 Features
 
-### Core FastAPI Features
+### API & Domain
 
-- ✅ **RESTful API Design** - Complete CRUD operations with proper HTTP methods
-- ✅ **Automatic OpenAPI Documentation** - Interactive docs at `/docs` and `/redoc`
-- ✅ **Request/Response Validation** - Pydantic models with automatic validation
-- ✅ **Dependency Injection** - Clean, testable code with FastAPI's DI system
-- ✅ **Authentication & Authorization** - JWT-based auth with OAuth2 flow
-- ✅ **API Versioning** - Support for multiple API versions (`/api/v1/`, `/api/v2/`)
+- ✅ **REST API, versioned** - `/api/v1` core, `/api/v2` advanced auth (MFA, magic links, sessions) and analytics
+- ✅ **Typed models** - SQLAlchemy 2.0 `Mapped[]` declarations, shared mixins, named constraints
+- ✅ **Tested migrations** - Alembic chain is applied and diffed against the models in CI
+- ✅ **One error envelope** - `{"error", "message", "details", "request_id"}` for every failure
+- ✅ **UTC everywhere** - timezone-aware timestamps via a custom column type; no naive datetimes
+- ✅ **Real-time** - WebSocket rooms/channels and Server-Sent Events (unbuffered, pure-ASGI stack)
+- ✅ **Files & forms** - streaming uploads with validation, multipart forms, surveys
+- ✅ **Analytics** - enrollment cohorts, market trends, instructor dashboard, A/B experiments with a z-test
 
-### Advanced Features
+### Operations
 
-- 🔄 **Real-time Communication** - WebSockets and Server-Sent Events
-- 📁 **File Upload/Download** - Streaming file operations with validation
-- ⚡ **Background Tasks** - Asynchronous task processing
-- 🗄️ **Caching** - Redis-based caching for performance
-- 🗃️ **Database Integration** - SQLAlchemy ORM with async support
-- 🔧 **Middleware** - Custom middleware for CORS, rate limiting, and monitoring
+- 🩺 **Probes** - `/health/live` and `/health/ready` (DB + Redis with timeouts, 503 when degraded)
+- 📈 **Metrics** - Prometheus `/metrics` labelled by route template; compose profile with Grafana
+- 🧾 **Structured logs** - structlog, JSON in production, `X-Request-ID` propagated end to end
+- 🚦 **Rate limiting** - sliding windows on Redis sorted sets, atomic, fails open on outage
+- 🔒 **Hardened defaults** - secrets as `SecretStr`, production refuses placeholder config, security headers, bcrypt
+- 🐳 **Docker** - multi-stage image (uv), non-root, tini, migrations on start, health-gated compose
 
-### Development & Production
+### Engineering
 
-- 🧪 **Comprehensive Testing** - Unit, integration, and performance tests
-- 🐳 **Docker Support** - Multi-service container setup
-- 🔄 **Database Migrations** - Alembic for schema management
-- 📊 **Monitoring & Logging** - Structured logging and health checks
-- 📈 **Performance Benchmarking** - Built-in API performance testing
+- 🧪 **145+ tests** on in-memory SQLite + fakeredis; no external services needed
+- 🧹 **ruff + mypy** - zero lint findings, zero type errors, both blocking in CI
+- ⚙️ **GitHub Actions** - lint, typecheck, test matrix (3.11/3.12), Docker build, OpenAPI artefact
+- 🤖 **Dependabot**, pre-commit hooks, Makefile
 
 ## 🛠️ Tech Stack
 
-| Category             | Technology      | Version | Purpose              |
-| -------------------- | --------------- | ------- | -------------------- |
-| **Framework**        | FastAPI         | 0.104+  | Web framework        |
-| **Language**         | Python          | 3.11+   | Programming language |
-| **Database**         | PostgreSQL      | 15+     | Primary database     |
-| **ORM**              | SQLAlchemy      | 2.0+    | Database ORM         |
-| **Cache**            | Redis           | 7+      | Caching layer        |
-| **Authentication**   | python-jose     | 3.3+    | JWT handling         |
-| **Testing**          | pytest          | 7.4+    | Testing framework    |
-| **Documentation**    | OpenAPI/Swagger | 3.0+    | API documentation    |
-| **Containerization** | Docker          | 20+     | Container platform   |
-| **Web Server**       | Uvicorn         | 0.24+   | ASGI server          |
+| Category             | Technology              | Purpose                                   |
+| -------------------- | ----------------------- | ----------------------------------------- |
+| **Framework**        | FastAPI / Starlette     | ASGI web framework                        |
+| **Language**         | Python 3.11+            | `X | None` unions, `StrEnum`, `datetime.UTC` |
+| **Validation**       | Pydantic v2             | Schemas and settings                      |
+| **Database**         | PostgreSQL 16           | Primary store (SQLite for tests)          |
+| **ORM / Migrations** | SQLAlchemy 2.0 / Alembic| Typed async ORM, versioned schema         |
+| **Cache & limits**   | Redis 7                 | Caching, rate limiting, token blacklist   |
+| **Auth**             | python-jose, bcrypt, pyotp | JWT, password hashing, TOTP MFA        |
+| **Observability**    | structlog, prometheus-client | Logs and metrics                     |
+| **Testing**          | pytest, httpx, fakeredis| Async tests without external services     |
+| **Quality**          | ruff, mypy, pre-commit  | Lint, format, types                       |
+| **Packaging**        | uv                      | Fast, reproducible installs               |
+| **Runtime**          | Uvicorn, Docker, nginx  | Serving and deployment                    |
 
 ## 📁 Project Structure
 
 ```
-FastAPIVerseHub/                    # 🏠 Project root
-├── app/                            # 📦 Main application package
-│   ├── __init__.py                 # 📄 Package initializer
-│   ├── main.py                     # 🚀 Application entry point
-│   ├── core/                       # ⚙️ Core configurations
-│   │   ├── __init__.py
-│   │   ├── config.py               # 🔧 Settings & environment config
-│   │   ├── dependencies.py         # 💉 Dependency injection
-│   │   ├── logging.py              # 📝 Logging configuration
-│   │   └── security.py             # 🔐 Security utilities (JWT, hashing)
-│   ├── api/                        # 🌐 API route definitions
-│   │   ├── __init__.py
-│   │   ├── v1/                     # 📌 API version 1
-│   │   │   ├── __init__.py
-│   │   │   ├── auth.py             # 🔑 Authentication endpoints
-│   │   │   ├── users.py            # 👥 User management
-│   │   │   ├── courses.py          # 📚 Course CRUD operations
-│   │   │   ├── uploads.py          # 📁 File upload/download
-│   │   │   ├── websocket.py        # 🔄 WebSocket connections
-│   │   │   ├── sse.py              # 📡 Server-Sent Events
-│   │   │   └── forms.py            # 📝 Form data handling
-│   │   └── v2/                     # 📌 API version 2 (Enhanced)
-│   │       ├── __init__.py
-│   │       ├── advanced_auth.py    # 🔑 Enhanced authentication
-│   │       └── advanced_courses.py # 📚 Advanced course features
-│   ├── models/                     # 🗃️ Database models
-│   │   ├── __init__.py
-│   │   ├── user.py                 # 👤 User database model
-│   │   ├── course.py               # 📖 Course database model
-│   │   └── token.py                # 🎫 Token/session models
-│   ├── schemas/                    # 📋 Pydantic request/response models
-│   │   ├── __init__.py
-│   │   ├── user.py                 # 👤 User validation schemas
-│   │   ├── course.py               # 📖 Course validation schemas
-│   │   ├── auth.py                 # 🔑 Authentication schemas
-│   │   └── common.py               # 🔧 Shared schemas
-│   ├── services/                   # 🏢 Business logic layer
-│   │   ├── __init__.py
-│   │   ├── auth_service.py         # 🔑 Authentication logic
-│   │   ├── user_service.py         # 👥 User management logic
-│   │   ├── course_service.py       # 📚 Course business logic
-│   │   └── notification_service.py # 📢 Real-time notifications
-│   ├── common/                     # 🛠️ Shared utilities
-│   │   ├── __init__.py
-│   │   ├── cache_utils.py          # 💾 Caching helpers
-│   │   ├── file_utils.py           # 📁 File handling utilities
-│   │   ├── email_utils.py          # 📧 Email utilities
-│   │   └── validators.py           # ✅ Custom validators
-│   ├── exceptions/                 # ❌ Custom exception classes
-│   │   ├── __init__.py
-│   │   ├── base_exceptions.py      # 🏗️ Base exception classes
-│   │   ├── auth_exceptions.py      # 🔑 Auth-related errors
-│   │   └── validation_exceptions.py # ❌ Validation errors
-│   ├── middleware/                 # 🔧 Custom middleware
-│   │   ├── __init__.py
-│   │   ├── cors_middleware.py      # 🌐 CORS configuration
-│   │   ├── rate_limiter.py         # 🚦 API rate limiting
-│   │   └── request_timer.py        # ⏱️ Request timing
-│   ├── tests/                      # 🧪 Test suite
-│   │   ├── __init__.py
-│   │   ├── conftest.py             # ⚙️ Pytest configuration
-│   │   ├── test_auth.py            # 🔑 Authentication tests
-│   │   ├── test_courses.py         # 📚 Course tests
-│   │   ├── test_uploads.py         # 📁 File upload tests
-│   │   ├── test_websockets.py      # 🔄 WebSocket tests
-│   │   ├── test_sse.py             # 📡 SSE tests
-│   │   └── test_middleware.py      # 🔧 Middleware tests
-│   └── templates/                  # 📄 Jinja2 templates
-│       ├── welcome_email.html      # 📧 Welcome email template
-│       ├── reset_password.html     # 🔓 Password reset template
-│       └── api_docs.html           # 📚 Custom API docs
-├── docs/                           # 📚 Documentation
-│   ├── concepts_map.md             # 🗺️ FastAPI concepts mapping
-│   ├── quick_reference.md          # ⚡ Quick reference guide
-│   ├── architecture_decisions.md   # 🏛️ Architecture decisions (ADRs)
-│   ├── learning_path.md            # 🎓 Structured learning guide
-│   ├── api_usage_guide.md          # 📘 API usage examples
-│   ├── async_best_practices.md     # ⚡ Async/await best practices
-│   ├── testing_guide.md            # 🧪 Testing strategies
-│   └── deployment_guide.md         # 🚀 Deployment instructions
-├── scripts/                        # 🛠️ Development scripts
-│   ├── generate_fake_data.py       # 🎭 Sample data generation
-│   ├── benchmark_apis.py           # 📊 Performance benchmarking
-│   ├── run_tests.sh               # 🧪 Test execution script
-│   └── generate_openapi_spec.py    # 📋 OpenAPI spec generation
-├── .env.example                    # 🔧 Environment variables template
-├── .gitignore                      # 🚫 Git ignore rules
-├── Dockerfile                      # 🐳 Container configuration
-├── docker-compose.yml              # 🐳 Multi-service orchestration
-├── pyproject.toml                  # 📦 Project configuration
-└── README.md                       # 📖 This file
+FastAPIVerseHub/
+├── app/
+│   ├── main.py                 # app factory, lifespan, middleware stack, error envelope
+│   ├── api/
+│   │   ├── health.py           # /health, /health/live, /health/ready
+│   │   ├── v1/                 # auth, users, courses, uploads, forms, websocket, sse
+│   │   └── v2/                 # advanced auth (MFA, magic link, sessions), advanced courses
+│   ├── core/
+│   │   ├── config.py           # validated Settings (SecretStr, production guards)
+│   │   ├── dependencies.py     # DB session, Redis, current-user dependencies
+│   │   ├── logging.py          # structlog + request correlation
+│   │   ├── metrics.py          # Prometheus middleware + /metrics
+│   │   ├── security.py         # bcrypt hasher, JWT manager
+│   │   └── time.py             # utcnow(), aware-datetime helpers
+│   ├── middleware/             # pure-ASGI: request context, rate limit, security headers, CORS
+│   ├── models/                 # SQLAlchemy 2.0 typed models, mixins, UTCDateTime
+│   ├── schemas/                # Pydantic request/response models
+│   ├── services/               # business logic (auth, users, courses, files, forms, analytics…)
+│   ├── common/                 # cache manager, sliding-window limiter, file/email utils
+│   ├── exceptions/             # application exception hierarchy
+│   ├── templates/              # Jinja2 email templates
+│   └── tests/                  # pytest suite (SQLite + fakeredis, migration drift tests)
+├── alembic/                    # migration environment and versions/
+├── docker/                     # entrypoint, Prometheus + Grafana provisioning
+├── docs/                       # guides and ADRs
+├── nginx/                      # reverse proxy config (TLS, WS, SSE, /metrics allow-list)
+├── scripts/                    # fake data, benchmarks, OpenAPI export, test runner
+├── .github/workflows/ci.yml    # lint · typecheck · tests · docker · openapi
+├── docker-compose.yml          # app + postgres + redis (+ monitoring / admin / nginx profiles)
+├── Dockerfile                  # multi-stage, uv, non-root, tini
+├── Makefile                    # make install | lint | typecheck | test | run | migrate
+└── pyproject.toml              # deps, ruff, mypy, pytest, coverage config
 ```
 
 ## 🚦 Quick Start
 
 ### Prerequisites
 
-- 🐍 **Python 3.11+** - [Download Python](https://python.org/downloads/)
-- 🐳 **Docker & Docker Compose** - [Install Docker](https://docs.docker.com/get-docker/)
-- 📦 **Git** - [Install Git](https://git-scm.com/downloads/)
+- 🐍 **Python 3.11+** and [**uv**](https://docs.astral.sh/uv/) (`pip install uv` works too)
+- 🐳 **Docker** (optional, for the full stack)
 
-### Option 1: Docker Setup (🔥 Recommended)
+### Option 1: Docker (🔥 recommended)
 
 ```bash
-# 1️⃣ Clone the repository
 git clone https://github.com/SatvikPraveen/FastAPIVerseHub.git
 cd FastAPIVerseHub
+docker compose up -d --build          # api + postgres + redis; migrations run on start
 
-# 2️⃣ Copy environment configuration
-cp .env.example .env
+curl -s localhost:8000/health/ready | jq   # {"status": "ready", ...}
+open http://localhost:8000/docs
 
-# 3️⃣ Create required __init__.py files
-touch app/__init__.py app/core/__init__.py app/api/__init__.py \
-      app/api/v1/__init__.py app/api/v2/__init__.py app/models/__init__.py \
-      app/schemas/__init__.py app/services/__init__.py app/common/__init__.py \
-      app/exceptions/__init__.py app/middleware/__init__.py app/tests/__init__.py
-
-# 4️⃣ Start all services
-docker-compose up -d
-
-# 5️⃣ Check service status
-docker-compose ps
-
-# 6️⃣ View logs (optional)
-docker-compose logs -f app
-
-# 🎉 Access the application
-# API: http://localhost:8000
-# Docs: http://localhost:8000/docs
-# Admin Panel: http://localhost:5050 (pgAdmin)
+# optional profiles
+docker compose --profile monitoring up -d  # Prometheus :9090, Grafana :3001
+docker compose --profile admin up -d       # pgAdmin :5050, Redis Commander :8081
 ```
 
-### Option 2: Local Development
+### Option 2: Local development
 
 ```bash
-# 1️⃣ Clone and setup
 git clone https://github.com/SatvikPraveen/FastAPIVerseHub.git
 cd FastAPIVerseHub
+make install                          # uv venv + deps + pre-commit hooks
+cp .env.example .env                  # point DATABASE_* / REDIS_* at your services
 
-# 2️⃣ Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# 3️⃣ Install dependencies
-pip install -e ".[dev]"
-
-# 4️⃣ Setup environment
-cp .env.example .env
-# Edit .env with your database and Redis URLs
-
-# 5️⃣ Create __init__.py files (same as Docker option step 3)
-
-# 6️⃣ Setup database (if using local PostgreSQL)
-createdb fastapi_verse_hub  # or use your preferred method
-
-# 7️⃣ Run database migrations
-alembic upgrade head
-
-# 8️⃣ Start the application
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-
-# 🎉 Open http://localhost:8000 in your browser
+make migrate                          # alembic upgrade head
+make run                              # uvicorn with reload on :8000
 ```
 
-### 🚀 Quick Health Check
+### Verify
 
 ```bash
-# Test if everything is working
-curl http://localhost:8000/health
-
-# Expected response:
-# {"status":"healthy","timestamp":"...","version":"1.0.0"}
+make lint typecheck test              # ruff · mypy · pytest (no services required)
 ```
 
 ## 📚 API Documentation
@@ -261,201 +167,151 @@ Once running, access the comprehensive API documentation:
 | **📖 ReDoc**        | http://localhost:8000/redoc        | Alternative documentation view |
 | **📋 OpenAPI Spec** | http://localhost:8000/openapi.json | Raw OpenAPI specification      |
 
-### 🔑 Default Test Account
+Docs are served in every environment except `production`. Export the spec with
+`python scripts/generate_openapi_spec.py` (JSON, YAML, Markdown and a Postman
+collection under `docs/openapi/`; CI publishes the same as an artefact).
 
-For testing purposes, use these credentials:
+### 🔑 Seed data
 
-- **📧 Email**: `admin@example.com`
-- **🔒 Password**: `admin123`
-- **👑 Role**: Administrator
+```bash
+python scripts/generate_fake_data.py     # users (password: password123), courses, enrollments
+```
 
 ## 🌐 API Endpoints
 
-### 🔑 Authentication
+Every error response has the same shape, so clients can switch on `error`:
 
-| Method | Endpoint                | Description       | Auth Required |
-| ------ | ----------------------- | ----------------- | ------------- |
-| `POST` | `/api/v1/auth/register` | User registration | ❌            |
-| `POST` | `/api/v1/auth/token`    | User login        | ❌            |
-| `POST` | `/api/v1/auth/refresh`  | Token refresh     | ✅            |
+```json
+{"error": "VALIDATION_ERROR", "message": "Request validation failed",
+ "details": {"errors": [{"field": "email", "message": "value is not a valid email address"}]},
+ "request_id": "3f1c9b2e0d0d4b6f9a1c2d3e4f5a6b7c"}
+```
 
-### 👥 User Management
+### 🔑 Authentication (`/api/v1/auth`, `/api/v2/auth`)
 
-| Method | Endpoint           | Description            | Auth Required |
-| ------ | ------------------ | ---------------------- | ------------- |
-| `GET`  | `/api/v1/users/me` | Get current user       | ✅            |
-| `PUT`  | `/api/v1/users/me` | Update current user    | ✅            |
-| `GET`  | `/api/v1/users/`   | List users (paginated) | ✅            |
+| Method | Endpoint                          | Description                          | Auth |
+| ------ | --------------------------------- | ------------------------------------ | ---- |
+| `POST` | `/api/v1/auth/register`           | Register, returns token pair         | ❌   |
+| `POST` | `/api/v1/auth/login`              | Login                                | ❌   |
+| `POST` | `/api/v1/auth/refresh`            | Rotate access token                  | ❌   |
+| `POST` | `/api/v1/auth/logout`             | Revoke token (jti blacklist)         | ✅   |
+| `POST` | `/api/v1/auth/forgot-password`    | Request reset token                  | ❌   |
+| `POST` | `/api/v1/auth/reset-password`     | Reset with token                     | ❌   |
+| `POST` | `/api/v2/auth/mfa/setup` `/verify` `/disable` | TOTP MFA lifecycle       | ✅   |
+| `POST` | `/api/v2/auth/passwordless/request` `/verify` | Magic-link login         | ❌   |
+| `GET`  | `/api/v2/auth/sessions`           | List / revoke sessions               | ✅   |
 
-### 📚 Course Management
+### 👥 Users & 📚 Courses
 
-| Method   | Endpoint               | Description        | Auth Required |
-| -------- | ---------------------- | ------------------ | ------------- |
-| `GET`    | `/api/v1/courses/`     | List courses       | ❌            |
-| `POST`   | `/api/v1/courses/`     | Create course      | ✅            |
-| `GET`    | `/api/v1/courses/{id}` | Get course details | ❌            |
-| `PUT`    | `/api/v1/courses/{id}` | Update course      | ✅            |
-| `DELETE` | `/api/v1/courses/{id}` | Delete course      | ✅            |
+| Method              | Endpoint                          | Description                        | Auth |
+| ------------------- | --------------------------------- | ---------------------------------- | ---- |
+| `GET/PUT/DELETE`    | `/api/v1/users/me`                | Own profile                        | ✅   |
+| `GET`               | `/api/v1/users/`                  | List users (admin)                 | 👑   |
+| `GET`               | `/api/v1/courses/`                | List/search courses                | ❌   |
+| `POST`              | `/api/v1/courses/`                | Create course                      | ✅   |
+| `GET/PUT/DELETE`    | `/api/v1/courses/{course_id}`     | Course detail / update / delete    | ❌/✅ |
+| `POST/DELETE`       | `/api/v1/courses/{course_id}/enroll` | Enroll / unenroll               | ✅   |
+| `GET`               | `/api/v2/courses/recommendations` | Recommendations                    | ✅   |
+| `GET`               | `/api/v2/courses/analytics/{id}`  | Course analytics (owner)           | ✅   |
+| `GET`               | `/api/v2/courses/cohorts/{id}`    | Monthly enrollment cohorts         | ✅   |
+| `POST`              | `/api/v2/courses/experiments/ab-test` | Create A/B experiment          | ✅   |
+| `GET`               | `/api/v2/courses/trends/market`   | Demand / pricing signals           | ❌   |
 
-### 📁 File Operations
+### 📁 Files & 📝 Forms
 
-| Method | Endpoint                        | Description     | Auth Required |
-| ------ | ------------------------------- | --------------- | ------------- |
-| `POST` | `/api/v1/uploads/`              | Upload file     | ✅            |
-| `GET`  | `/api/v1/uploads/{id}/download` | Download file   | ✅            |
-| `GET`  | `/api/v1/uploads/my-files`      | List user files | ✅            |
+| Method   | Endpoint                             | Description                     | Auth |
+| -------- | ------------------------------------ | ------------------------------- | ---- |
+| `POST`   | `/api/v1/uploads/file` `/multiple`   | Upload (streamed, hashed)       | ✅   |
+| `GET`    | `/api/v1/uploads/download/{file_id}` | Download (public files: no auth)| ❌/✅ |
+| `GET`    | `/api/v1/uploads/stream/{file_id}`   | Chunked stream                  | ✅   |
+| `GET`    | `/api/v1/uploads/categories` `/stats`| Per-user aggregates             | ✅   |
+| `POST`   | `/api/v1/forms/contact` `/feedback` `/survey` `/multipart` `/dynamic` | Submissions | varies |
+| `POST`   | `/api/v1/forms/validate`             | Dry-run validation              | ❌   |
 
-### 📊 System Endpoints
+### 📊 System
 
-| Method | Endpoint  | Description         | Auth Required |
-| ------ | --------- | ------------------- | ------------- |
-| `GET`  | `/health` | Basic health status | ❌            |
-| `GET`  | `/ready`  | Readiness probe     | ❌            |
+| Method | Endpoint        | Description                                   | Auth |
+| ------ | --------------- | --------------------------------------------- | ---- |
+| `GET`  | `/health/live`  | Liveness                                      | ❌   |
+| `GET`  | `/health/ready` | Readiness (DB + Redis), 503 when degraded     | ❌   |
+| `GET`  | `/metrics`      | Prometheus exposition                         | ❌ (restrict at the proxy) |
+
+Rate-limited responses carry `X-RateLimit-Limit`, `X-RateLimit-Remaining`,
+`X-RateLimit-Reset` and, on 429, `Retry-After`. Every response carries
+`X-Request-ID` and `X-Process-Time`.
 
 ## 🔄 Real-time Features
 
-### 🌐 WebSocket Connection
+### 🌐 WebSocket
 
 ```javascript
-// Connect to WebSocket
-const ws = new WebSocket("ws://localhost:8000/api/v1/ws");
-
-// Authenticate
+const ws = new WebSocket("ws://localhost:8000/api/v1/ws/connect/my-client?token=" + jwt);
+ws.onmessage = (e) => console.log(JSON.parse(e.data));
 ws.onopen = () => {
-  ws.send(
-    JSON.stringify({
-      type: "authenticate",
-      token: "your-jwt-token",
-    })
-  );
+  ws.send(JSON.stringify({ type: "subscribe", channel: "general" }));
+  ws.send(JSON.stringify({ type: "broadcast", channel: "general", content: "Hello!" }));
 };
-
-// Send message
-ws.send(
-  JSON.stringify({
-    type: "message",
-    content: "Hello, World!",
-    room: "general",
-  })
-);
 ```
+
+Message types: `ping`, `subscribe`, `unsubscribe`, `broadcast`, `private_message`,
+`join_room`, `leave_room`, `room_message`. Stats at `GET /api/v1/ws/stats`.
 
 ### 📡 Server-Sent Events
 
 ```javascript
-// Subscribe to notifications
-const eventSource = new EventSource(
-  "http://localhost:8000/api/v1/sse/notifications?token=your-jwt-token"
-);
-
-eventSource.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  console.log("Notification:", data);
-};
+const es = new EventSource("http://localhost:8000/api/v1/sse/events?channels=general,updates");
+es.addEventListener("connected", (e) => console.log("connected", JSON.parse(e.data)));
+es.addEventListener("message", (e) => console.log(JSON.parse(e.data)));
 ```
+
+Publish with `POST /api/v1/sse/publish/{channel}` or `POST /api/v1/sse/broadcast`.
+The stream ends as soon as the client disconnects; the middleware stack is pure
+ASGI so events are not buffered.
 
 ## 🧪 Testing
 
-### 🚀 Quick Test Run
-
 ```bash
-# Run all tests
-./scripts/run_tests.sh
-
-# Run with coverage report
-./scripts/run_tests.sh --coverage
-
-# Run specific test types
-./scripts/run_tests.sh --type unit --verbose
-./scripts/run_tests.sh --type integration
-./scripts/run_tests.sh --type performance
+make test         # full suite with coverage (fails under 80%)
+make test-fast    # parallel, no coverage
+pytest app/tests/test_rate_limit.py -k concurrent -v
 ```
 
-### 🎭 Generate Test Data
+- Runs entirely in-process: async SQLite in memory and **fakeredis** with real
+  Redis command semantics. No Docker, no services.
+- `test_migrations.py` applies the Alembic chain to a scratch database and
+  asserts zero drift against the models, then downgrades to empty.
+- Every test has a 60 s timeout, so a stalled stream fails fast.
+- Load test a running instance: `python scripts/benchmark_apis.py --total 200 --concurrent 20`.
 
-```bash
-# Generate sample users and courses
-python scripts/generate_fake_data.py
-
-# Options:
-# - 50 users (including 1 admin)
-# - 30 courses with realistic data
-# - Course enrollments
-# - Sample file records
-```
-
-### 📊 Performance Benchmarking
-
-```bash
-# Run API performance tests
-python scripts/benchmark_apis.py --total 100 --concurrent 10
-
-# Export results to JSON
-python scripts/benchmark_apis.py --export results.json
-```
-
-### 🎯 Test Coverage Goals
-
-- **Unit Tests**: 90%+ coverage
-- **Integration Tests**: All API endpoints
-- **Performance Tests**: Sub-100ms response times
-- **E2E Tests**: Critical user workflows
+See [`docs/testing_guide.md`](docs/testing_guide.md).
 
 ## 🔧 Development
 
-### 🛠️ Development Commands
-
 ```bash
-# 📊 Generate fake data for testing
-python scripts/generate_fake_data.py
-
-# 📋 Export OpenAPI specification
-python scripts/generate_openapi_spec.py
-
-# 📈 Run performance benchmarks
-python scripts/benchmark_apis.py
-
-# 🗃️ Database migrations
-alembic revision --autogenerate -m "Add new feature"
-alembic upgrade head
-alembic downgrade -1
-
-# 🎨 Code formatting and linting
-black app/          # Format code
-isort app/          # Sort imports
-flake8 app/         # Lint code
-mypy app/           # Type checking
+make help          # list targets
+make lint          # ruff check
+make format        # ruff --fix + ruff format
+make typecheck     # mypy app  (zero errors is the bar)
+make migrate       # alembic upgrade head
+alembic revision --autogenerate -m "add thing"   # then run make test: drift is asserted
 ```
 
-### 🔄 Development Workflow
+`pre-commit install` (done by `make install`) runs ruff, ruff-format and mypy
+on every commit. CI runs the same checks plus the test matrix and a Docker build.
 
-1. **🌿 Branch**: Create feature branch from `main`
-2. **💻 Code**: Implement feature with tests
-3. **🧪 Test**: Run full test suite
-4. **🎨 Format**: Apply code formatting
-5. **📝 Document**: Update documentation
-6. **🔍 Review**: Create pull request
-7. **🚀 Deploy**: Merge and deploy
-
-### 🐳 Docker Development
+### 🐳 Docker development
 
 ```bash
-# 🏗️ Build and start development environment
-docker-compose up -d --build
-
-# 🔍 View service logs
-docker-compose logs -f app
-
-# 🗃️ Access database directly
-docker-compose exec db psql -U fastapi_user -d fastapi_verse_hub
-
-# 💾 Access Redis CLI
-docker-compose exec redis redis-cli
-
-# 📊 Monitor with management tools
-# pgAdmin: http://localhost:5050 (admin@example.com / admin)
-# Redis Commander: http://localhost:8081 (admin / admin)
+docker compose up -d --build
+docker compose logs -f app
+docker compose exec app alembic history
+docker compose exec db psql -U fastapi_user -d fastapi_verse_hub
+docker compose --profile monitoring up -d    # Prometheus + Grafana
 ```
+
+The image runs migrations on start (`SKIP_MIGRATIONS=1` to disable), serves with
+`WEB_CONCURRENCY` uvicorn workers behind tini, and reports readiness via the
+container healthcheck.
 
 ## 🏗️ Architecture
 
@@ -508,15 +364,16 @@ docker-compose exec redis redis-cli
 ### 🐳 Docker Production
 
 ```bash
-# 🌐 Production deployment
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Build the runtime image (multi-stage, non-root, tini, migrations on start)
+docker build -t fastapiversehub:latest .
 
-# 🔒 With SSL (requires nginx configuration)
-docker-compose --profile production up -d
+# Run behind the bundled nginx (TLS, WebSocket/SSE proxying, /metrics allow-list)
+docker compose --profile production up -d
 
-# 📊 Monitor deployment
-docker-compose ps
-docker-compose logs -f
+# Required production environment (startup refuses unsafe values):
+#   ENVIRONMENT=production  JWT_SECRET_KEY=<openssl rand -hex 32>
+#   DATABASE_URL=postgresql://...  REDIS_URL=redis://...  CORS_ORIGINS=https://app.example.com
+docker compose ps && docker compose logs -f app
 ```
 
 ### 🖥️ Traditional Server
@@ -587,12 +444,13 @@ python scripts/benchmark_apis.py \
 | ------------------------ | ----------------- | ---------------------------- |
 | **🔑 Authentication**    | JWT tokens        | Stateless authentication     |
 | **🔒 Password Security** | bcrypt hashing    | Secure password storage      |
-| **🌐 CORS Protection**   | Custom middleware | Cross-origin request control |
-| **🚦 Rate Limiting**     | Token bucket      | API abuse prevention         |
+| **🌐 CORS Protection**   | Starlette CORS    | Explicit origins; wildcard refused in production |
+| **🚦 Rate Limiting**     | Sliding window (Redis ZSET) | Atomic, burst/minute/hour, fails open |
 | **✅ Input Validation**  | Pydantic models   | Data sanitization            |
 | **🛡️ SQL Injection**     | SQLAlchemy ORM    | Parameterized queries        |
 | **📁 File Security**     | Type validation   | Safe file uploads            |
-| **🔐 Security Headers**  | Custom middleware | OWASP recommendations        |
+| **🔐 Security Headers**  | Pure-ASGI middleware | nosniff, DENY framing, CSP, HSTS in prod |
+| **⚙️ Config guards**     | Settings validator | Placeholder secrets / DEBUG rejected in production |
 
 ### 🔐 Security Best Practices
 
@@ -601,43 +459,26 @@ python scripts/benchmark_apis.py \
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 # 🔍 Security audit
-pip install safety bandit
-safety check
-bandit -r app/
-
-# 🛡️ Update dependencies regularly
+uv pip install pip-audit bandit
 pip-audit
+bandit -r app/ -c pyproject.toml
 ```
 
 ## 📊 Monitoring
 
-### 🏥 Health Checks
+| Endpoint        | Purpose                                        |
+| --------------- | ---------------------------------------------- |
+| `/health/live`  | Process up; never touches dependencies         |
+| `/health/ready` | DB + Redis checked with timeouts; 503 if not   |
+| `/metrics`      | Prometheus: requests, latency histogram, in-flight, exceptions (by route template) |
 
-| Endpoint      | Purpose         | Response            |
-| ------------- | --------------- | ------------------- |
-| `GET /health` | Basic health    | Service status      |
-| `GET /ready`  | Readiness probe | Dependencies status |
-
-### 📈 Metrics & Logging
-
-- **📝 Structured Logging** - JSON format with correlation IDs
-- **⏱️ Request Timing** - Response time tracking
-- **❌ Error Tracking** - Comprehensive error logging
-- **📊 Custom Metrics** - Business metrics collection
-- **🔍 Prometheus** - Metrics endpoint for monitoring
-
-### 🔍 Monitoring Setup
+Logs are structured (structlog); `LOG_FORMAT=json` in production. Every line and
+every error body carries the `request_id`, which is also returned as
+`X-Request-ID` and accepted from upstream proxies.
 
 ```bash
-# 📊 View application logs
-docker-compose logs -f app
-
-# 📈 Access metrics endpoint
-curl http://localhost:8000/metrics
-
-# 🏥 Check health status
-curl http://localhost:8000/health
-curl http://localhost:8000/ready
+curl -s localhost:8000/metrics | grep http_request_duration_seconds_bucket | head
+docker compose --profile monitoring up -d && open http://localhost:3001
 ```
 
 ## 📖 Learning Resources
@@ -680,14 +521,14 @@ We welcome contributions! Here's how to get started:
 1. **🍴 Fork** the repository
 2. **🌿 Create** a feature branch (`git checkout -b feature/amazing-feature`)
 3. **💻 Make** your changes with tests
-4. **🧪 Ensure** all tests pass (`./scripts/run_tests.sh`)
+4. **🧪 Ensure** `make lint typecheck test` passes
 5. **📝 Commit** your changes (`git commit -m 'Add amazing feature'`)
 6. **⬆️ Push** to branch (`git push origin feature/amazing-feature`)
 7. **🔄 Open** a Pull Request
 
 ### 📋 Development Guidelines
 
-- **🎨 Code Style** - Follow PEP 8 and use `black` formatter
+- **🎨 Code Style** - `ruff format` + `ruff check` (configured in `pyproject.toml`)
 - **🔤 Type Hints** - Add type hints to all functions
 - **🧪 Testing** - Write tests for new functionality (aim for 90%+ coverage)
 - **📚 Documentation** - Update relevant documentation
@@ -720,17 +561,17 @@ Look for issues labeled with:
 
 ```bash
 # Check if database is running
-docker-compose ps db
+docker compose ps db
 
 # Check connection string
 echo $DATABASE_URL
 
 # Reset database
-docker-compose down -v
-docker-compose up -d db
+docker compose down -v
+docker compose up -d db
 
 # Check logs
-docker-compose logs db
+docker compose logs db
 ```
 
 </details>
@@ -746,10 +587,10 @@ redis-cli ping  # Should return PONG
 echo $REDIS_URL
 
 # Restart Redis
-docker-compose restart redis
+docker compose restart redis
 
 # Check Redis logs
-docker-compose logs redis
+docker compose logs redis
 ```
 
 </details>
@@ -803,7 +644,7 @@ python -c "from app.core.config import settings; print(settings.DATABASE_URL)"
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level debug
 
 # Check application logs
-docker-compose logs -f app
+docker compose logs -f app
 ```
 
 </details>
@@ -826,11 +667,10 @@ This project serves as a comprehensive learning resource and production-ready te
 
 ## 📊 Project Statistics
 
-- **📁 Total Files**: 77
-- **📦 Directories**: 17
-- **🧪 Test Coverage**: 80%+ (target: 90%+)
-- **📋 API Endpoints**: 15+ (across v1 and v2)
-- **📚 Documentation Pages**: 8
+- **🧪 Tests**: 145+ (unit, integration, migration drift, concurrency)
+- **🧹 Lint / types**: ruff clean, mypy 0 errors
+- **📋 API Endpoints**: 60+ across v1 and v2
+- **📚 Docs**: 8 guides + 17 ADRs, plus a changelog
 - **🛠️ Utility Scripts**: 4
 
 ## 🎯 Roadmap
@@ -839,18 +679,17 @@ This project serves as a comprehensive learning resource and production-ready te
 
 - **🔐 OAuth2 Social Login** - Google, GitHub, Facebook integration
 - **📊 Admin Dashboard** - Web-based administration interface
-- **📈 Analytics & Metrics** - Detailed usage analytics
 - **🔍 Full-text Search** - Elasticsearch integration
 - **📱 Mobile API** - Mobile-optimized endpoints
 - **🌍 Internationalization** - Multi-language support
 
 ### 🏗️ Technical Improvements
 
-- **📦 Microservices** - Service decomposition guide
-- **🎭 Event Sourcing** - Event-driven architecture patterns
+- **🔭 Tracing** - OpenTelemetry spans exported alongside the existing metrics/logs
+- **📨 Task queue** - Move email and report generation to a worker (arq/Celery)
+- **🗂️ Object storage** - S3-compatible backend for uploads
 - **🗺️ GraphQL** - GraphQL endpoints alongside REST
-- **🤖 ML Integration** - Machine learning model serving
-- **☁️ Cloud Native** - Kubernetes-native deployment
+- **☸️ Helm chart** - Kubernetes-native deployment with the probes already provided
 
 ## 📄 License
 

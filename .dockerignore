@@ -17,4 +17,4 @@ uploads
 !README.md
 docs
 scripts/benchmark_apis.py
-generate_fastapi_project.sh
+

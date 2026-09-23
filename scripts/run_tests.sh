@@ -141,10 +141,9 @@ setup_test_environment() {
     
     # Export test environment variables
     export ENVIRONMENT=testing
-    export DATABASE_URL="sqlite:///./test.db"
+    export DATABASE_URL="sqlite+aiosqlite:///./test.db"
     export REDIS_URL="redis://localhost:6379/1"
-    export SECRET_KEY="test-secret-key-change-in-production"
-    export JWT_SECRET_KEY="test-jwt-secret-key"
+    export JWT_SECRET_KEY="test-jwt-secret-key-0123456789abcdef0123456789"
     
     # Clean test database if requested
     if [ "$CLEAN_DB" = true ]; then
@@ -152,10 +151,8 @@ setup_test_environment() {
         rm -f test.db test.db-*
     fi
     
-    # Check if required services are running
-    if ! redis-cli ping > /dev/null 2>&1; then
-        print_warning "Redis is not running - some tests may fail"
-    fi
+    # Unit/integration tests use an in-memory SQLite database and fakeredis;
+    # no external services are required for them.
 }
 
 # Run unit tests
@@ -284,21 +281,17 @@ run_performance_tests() {
 # Run linting and code quality checks
 run_quality_checks() {
     print_status "Running code quality checks..."
-    
-    # Check if linting tools are installed
-    if command -v flake8 > /dev/null; then
-        print_status "Running flake8..."
-        flake8 app/ --max-line-length=88 --extend-ignore=E203,W503 || print_warning "Flake8 warnings found"
+
+    if command -v ruff > /dev/null; then
+        print_status "Running ruff (lint)..."
+        ruff check app scripts alembic || print_warning "Lint findings"
+        print_status "Checking formatting with ruff..."
+        ruff format --check app scripts alembic || print_warning "Formatting issues found (run: ruff format app scripts alembic)"
     fi
-    
-    if command -v black > /dev/null; then
-        print_status "Checking code formatting with black..."
-        black --check app/ || print_warning "Code formatting issues found"
-    fi
-    
+
     if command -v mypy > /dev/null; then
         print_status "Running type checks with mypy..."
-        mypy app/ || print_warning "Type checking issues found"
+        mypy app || print_warning "Type checking issues found"
     fi
 }
 

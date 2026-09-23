@@ -230,7 +230,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
         ]
         return _envelope(
             request,
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
             "VALIDATION_ERROR",
             "Request validation failed",
             {"errors": errors},

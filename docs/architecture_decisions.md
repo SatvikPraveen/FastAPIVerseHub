@@ -296,3 +296,103 @@ This document explains the architectural decisions made for the FastAPIVerseHub 
 - ✅ Better monitoring
 - ✅ Consistent behavior
 - ❌ Debugging complexity
+
+## ADR-013: Typed ORM Models and UTC-Only Timestamps
+
+**Decision**: Declare every model with SQLAlchemy 2.0 `Mapped[]` annotations on a
+`DeclarativeBase`, and store all timestamps through a custom `UTCDateTime`
+column type that is always timezone-aware.
+
+**Context**: The legacy `Column()` style gave mypy no information about
+attribute types, so services compiled with hundreds of false positives and
+real bugs hid among them. Naive `datetime.utcnow()` values compared against
+local-time conversions caused a token-expiry bug that rejected every token on
+machines west of UTC.
+
+**Rationale**:
+
+- `Mapped[int]` is a real `int` to the type checker; service code is checked
+- A `type_annotation_map` means `datetime` fields need no per-column type
+- `UTCDateTime` normalises on write and re-tags naive values on read, so
+  application code never sees a naive datetime regardless of backend
+- Mixins (`TimestampMixin`, `SoftDeleteMixin`) remove copy-pasted columns
+- A `MetaData` naming convention gives every constraint a stable name, which
+  is what makes Alembic downgrades possible
+
+**Consequences**:
+
+- ✅ mypy runs clean and is a blocking CI check
+- ✅ Enum columns persist their *values* (`"beginner"`), matching the API
+- ❌ SQLite still stores naive strings; comparisons rely on the type decorator
+
+## ADR-014: One Error Envelope
+
+**Decision**: Every non-2xx response body has the shape
+`{"error": CODE, "message": text, "details": {...}, "request_id": id}`,
+produced by handlers for `BaseAppException`, `HTTPException`,
+`RequestValidationError` and unhandled `Exception`.
+
+**Rationale**: Clients branch on a machine-readable `error` code rather than
+parsing prose, validation errors are flattened to `field`/`message` pairs,
+and the correlation id in the body lets a user quote it to support.
+
+**Consequences**:
+
+- ✅ Uniform client handling; 500s never leak stack traces
+- ❌ FastAPI's default `{"detail": ...}` shape is gone (documented breaking change)
+
+## ADR-015: Sliding-Window Rate Limiting on Redis
+
+**Decision**: Rate limit with a sorted-set sliding window executed as one
+Redis transaction per request, with burst (10 s), minute and hour windows.
+The middleware fails *open* if Redis is unreachable.
+
+**Alternatives Considered**: fixed-window counters (GET/INCR/EXPIRE), token
+bucket in Lua, proxy-only limiting in nginx.
+
+**Rationale**:
+
+- The GET/INCR pair races under concurrency and over-admits; a MULTI/EXEC
+  transaction does not
+- A sliding window has no boundary burst (2x the limit straddling a reset)
+- Rejected requests are removed again so a client cannot lock itself out
+- Failing open keeps an outage in the cache tier from becoming an API outage;
+  nginx still applies a coarse per-IP limit in front
+
+**Consequences**:
+
+- ✅ Correct under concurrency (covered by a 40-way `asyncio.gather` test)
+- ❌ One ZSET per client per window; memory is bounded by `limit` entries each
+
+## ADR-016: Observability Baseline
+
+**Decision**: Ship structured logs with request correlation, Prometheus
+metrics labelled by route template, and separate liveness/readiness probes;
+implement the request-path pieces as raw ASGI middleware.
+
+**Rationale**:
+
+- `BaseHTTPMiddleware` buffers streaming responses (breaks SSE) and reorders
+  background tasks; raw ASGI callables do neither
+- Route-template labels keep metric cardinality bounded; raw paths would
+  create a new series per id
+- Readiness that returns 503 lets a load balancer drain a bad instance
+  without the orchestrator restarting a healthy process
+- A validated incoming `X-Request-ID` is honoured so traces span the proxy
+
+**Consequences**:
+
+- ✅ One grep on a request id reconstructs a request end to end
+- ✅ `docker compose --profile monitoring up` gives Prometheus + Grafana locally
+- ❌ Middleware code is more verbose than `dispatch()` style
+
+## ADR-017: Migrations Are Tested
+
+**Decision**: CI applies `alembic upgrade head` to an empty database, asserts
+`compare_metadata()` reports no drift against the models, then runs
+`downgrade base` and asserts no tables remain.
+
+**Rationale**: A model change without a migration is the most common way a
+deploy breaks; catching it in the test suite is cheaper than in production.
+Migrations render custom types as plain SQLAlchemy types so they never import
+application code and keep working after refactors.

@@ -1,308 +1,301 @@
 #!/usr/bin/env python3
 """
-File Location: scripts/generate_fake_data.py
+Generate fake data for local development.
 
-Generate fake data for testing the FastAPIVerseHub application.
-This script creates sample users, courses, and other test data.
+Creates users (one admin), courses, enrollments, reviews and file-upload
+records using the real ORM models, so the seeded database is exactly what
+the application expects.
+
+    python scripts/generate_fake_data.py --yes --users 50 --courses 30
+    python scripts/generate_fake_data.py --clear --yes
+
+Uses the synchronous driver derived from DATABASE_URL (psycopg2 / sqlite).
 """
 
-import asyncio
+from __future__ import annotations
+
+import argparse
 import os
 import random
-
-# Import your models and database setup
+import re
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
+from decimal import Decimal
 
 from faker import Faker
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, delete
+from sqlalchemy.orm import Session, sessionmaker
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import app.models  # noqa: F401 - register every table
 from app.core.config import settings
-from app.core.security import hash_password
-from app.models.course import Course
-from app.models.user import User
+from app.core.security import get_password_hash
+from app.core.time import utcnow
+from app.models.course import (
+    Course,
+    CourseReview,
+    CourseStatus,
+    DifficultyLevel,
+    Enrollment,
+    EnrollmentStatus,
+)
+from app.models.user import FileUpload, User
 
 fake = Faker()
+Faker.seed(42)
+random.seed(42)
 
-# Database setup
-engine = create_engine(settings.DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+ADMIN_EMAIL = "admin@example.com"
+ADMIN_PASSWORD = "admin123"
+USER_PASSWORD = "password123"
+
+CATEGORIES = [
+    "programming",
+    "web-development",
+    "data-science",
+    "mobile-development",
+    "devops",
+    "design",
+    "business",
+    "marketing",
+]
+TAGS = ["python", "fastapi", "sql", "docker", "react", "aws", "ml", "testing", "async"]
+
+
+def sync_database_url() -> str:
+    """Strip async drivers so a plain synchronous engine can be used."""
+    url = settings.DATABASE_URL
+    return url.replace("+asyncpg", "").replace("+aiosqlite", "")
+
+
+def slugify(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
 class DataGenerator:
-    def __init__(self, session):
+    def __init__(self, session: Session) -> None:
         self.session = session
-        self.created_users = []
-        self.created_courses = []
+        self.users: list[User] = []
+        self.courses: list[Course] = []
+        self.enrollments = 0
+        self.reviews = 0
+        self.files = 0
 
-    def generate_users(self, count: int = 50) -> list[User]:
-        """Generate fake users"""
-        print(f"Generating {count} fake users...")
+    # ------------------------------------------------------------------
 
-        users = []
-        for i in range(count):
-            user = User(
-                email=fake.unique.email(),
-                hashed_password=hash_password("password123"),  # Same password for all test users
-                full_name=fake.name(),
-                bio=fake.text(max_nb_chars=200) if random.choice([True, False]) else None,
-                is_active=random.choice([True, True, True, False]),  # 75% active
-                is_superuser=False,
-                avatar_url=fake.image_url() if random.choice([True, False]) else None,
-                date_joined=fake.date_time_between(start_date="-2y", end_date="now"),
-                last_login=fake.date_time_between(start_date="-30d", end_date="now")
-                if random.choice([True, False])
-                else None,
+    def generate_users(self, count: int) -> None:
+        print(f"Generating {count} users...")
+        password_hash = get_password_hash(USER_PASSWORD)  # hash once: bcrypt is slow on purpose
+        for _ in range(count):
+            self.users.append(
+                User(
+                    email=fake.unique.email(),
+                    hashed_password=password_hash,
+                    full_name=fake.name(),
+                    bio=fake.text(max_nb_chars=160) if random.random() < 0.5 else None,
+                    is_active=random.random() < 0.9,
+                    is_verified=random.random() < 0.7,
+                    avatar_url=fake.image_url() if random.random() < 0.4 else None,
+                    location=fake.city(),
+                    skill_level=random.choice(["beginner", "intermediate", "advanced"]),
+                    interests=random.sample(TAGS, k=random.randint(1, 3)),
+                    last_login_at=utcnow() - timedelta(days=random.randint(0, 30)),
+                    login_count=random.randint(0, 50),
+                )
             )
-            users.append(user)
-
-            if (i + 1) % 10 == 0:
-                print(f"  Created {i + 1} users...")
-
-        # Add one superuser
-        admin_user = User(
-            email="admin@example.com",
-            hashed_password=hash_password("admin123"),
-            full_name="Administrator",
-            bio="System Administrator",
-            is_active=True,
-            is_superuser=True,
-            date_joined=datetime.utcnow() - timedelta(days=365),
-            last_login=datetime.utcnow() - timedelta(hours=1),
+        self.users.append(
+            User(
+                email=ADMIN_EMAIL,
+                hashed_password=get_password_hash(ADMIN_PASSWORD),
+                full_name="Administrator",
+                bio="System administrator",
+                is_active=True,
+                is_verified=True,
+                is_superuser=True,
+                last_login_at=utcnow() - timedelta(hours=1),
+            )
         )
-        users.append(admin_user)
-
-        self.session.add_all(users)
+        self.session.add_all(self.users)
         self.session.commit()
-        self.created_users = users
-        print(f"✓ Generated {len(users)} users")
-        return users
+        print(f"  created {len(self.users)} users (admin: {ADMIN_EMAIL} / {ADMIN_PASSWORD})")
 
-    def generate_courses(self, count: int = 30) -> list[Course]:
-        """Generate fake courses"""
-        print(f"Generating {count} fake courses...")
-
-        categories = [
-            "Programming",
-            "Web Development",
-            "Data Science",
-            "Mobile Development",
-            "DevOps",
-            "Design",
-            "Business",
-            "Marketing",
-            "Photography",
-            "Music",
-        ]
-
-        difficulties = ["beginner", "intermediate", "advanced"]
-
-        courses = []
+    def generate_courses(self, count: int) -> None:
+        print(f"Generating {count} courses...")
+        instructors = [u for u in self.users if u.is_active] or self.users
+        used_slugs: set[str] = set()
         for i in range(count):
-            # Select random instructor from created users
-            instructor = random.choice(self.created_users)
-
-            course = Course(
-                title=self._generate_course_title(),
-                description=fake.text(max_nb_chars=500),
-                category=random.choice(categories),
-                difficulty=random.choice(difficulties),
-                estimated_duration=random.randint(30, 480),  # 30 minutes to 8 hours
-                instructor_id=instructor.id,
-                is_published=random.choice([True, True, True, False]),  # 75% published
-                created_at=fake.date_time_between(start_date="-1y", end_date="now"),
-                updated_at=fake.date_time_between(start_date="-30d", end_date="now"),
-                thumbnail_url=fake.image_url() if random.choice([True, False]) else None,
-                price=random.choice([0, 9.99, 19.99, 29.99, 49.99, 99.99])
-                if random.choice([True, False])
-                else 0,
-                rating=round(random.uniform(3.0, 5.0), 1) if random.choice([True, False]) else None,
-                enrollment_count=random.randint(0, 1000),
+            title = self._course_title()
+            slug = slugify(title)
+            if slug in used_slugs:
+                slug = f"{slug}-{i}"
+            used_slugs.add(slug)
+            published = random.random() < 0.75
+            price = random.choice([0, 9.99, 19.99, 29.99, 49.99, 99.99])
+            self.courses.append(
+                Course(
+                    title=title,
+                    slug=slug,
+                    description=fake.text(max_nb_chars=500),
+                    short_description=fake.sentence(nb_words=12),
+                    instructor_id=random.choice(instructors).id,
+                    category=random.choice(CATEGORIES),
+                    tags=random.sample(TAGS, k=random.randint(1, 4)),
+                    difficulty=random.choice(list(DifficultyLevel)),
+                    estimated_duration_hours=random.randint(1, 40),
+                    learning_objectives=[fake.sentence() for _ in range(3)],
+                    price=Decimal(str(price)),
+                    is_free=price == 0,
+                    status=CourseStatus.PUBLISHED if published else CourseStatus.DRAFT,
+                    is_published=published,
+                    is_featured=random.random() < 0.1,
+                    published_at=utcnow() - timedelta(days=random.randint(1, 365))
+                    if published
+                    else None,
+                    thumbnail_url=fake.image_url() if random.random() < 0.5 else None,
+                )
             )
-            courses.append(course)
-
-            if (i + 1) % 10 == 0:
-                print(f"  Created {i + 1} courses...")
-
-        self.session.add_all(courses)
+        self.session.add_all(self.courses)
         self.session.commit()
-        self.created_courses = courses
-        print(f"✓ Generated {len(courses)} courses")
-        return courses
+        print(f"  created {len(self.courses)} courses")
 
-    def _generate_course_title(self) -> str:
-        """Generate realistic course titles"""
-        tech_words = [
-            "Python",
-            "JavaScript",
-            "React",
-            "Django",
-            "FastAPI",
-            "Node.js",
-            "SQL",
-            "Docker",
-            "AWS",
-            "Machine Learning",
-            "Data Analysis",
-            "Web Design",
-        ]
-
-        action_words = [
-            "Complete Guide to",
-            "Master",
-            "Learn",
-            "Build",
-            "Create",
-            "Develop",
-            "Introduction to",
-            "Advanced",
-            "Practical",
-        ]
-
-        descriptors = [
-            "for Beginners",
-            "from Scratch",
-            "in 30 Days",
-            "Masterclass",
-            "Bootcamp",
-            "Workshop",
-            "Tutorial",
-            "Course",
-        ]
-
-        tech = random.choice(tech_words)
-        action = random.choice(action_words)
-        descriptor = random.choice(descriptors)
-
-        templates = [
-            f"{action} {tech} {descriptor}",
-            f"{tech} {descriptor}",
-            f"{action} {tech}",
-            f"{tech}: {action} {descriptor}",
-        ]
-
-        return random.choice(templates)
-
-    def generate_user_course_enrollments(self, enrollment_rate: float = 0.3):
-        """Generate course enrollments for users"""
-        print("Generating course enrollments...")
-
-        enrollments_created = 0
-        for user in self.created_users:
-            if user.is_superuser:
+    def generate_enrollments(self, enrollment_rate: float = 0.3) -> None:
+        print("Generating enrollments and reviews...")
+        published = [c for c in self.courses if c.is_published]
+        for user in self.users:
+            if user.is_superuser or not published:
                 continue
-
-            # Each user enrolls in random courses
-            num_enrollments = random.randint(0, min(10, len(self.created_courses)))
-            enrolled_courses = random.sample(self.created_courses, num_enrollments)
-
-            for course in enrolled_courses:
-                if random.random() < enrollment_rate:
-                    # In a real app, you'd have an enrollment model
-                    # For now, we'll just update the course enrollment count
-                    course.enrollment_count += 1
-                    enrollments_created += 1
-
+            for course in random.sample(published, k=min(len(published), random.randint(0, 6))):
+                if random.random() > enrollment_rate or course.instructor_id == user.id:
+                    continue
+                status = random.choices(
+                    [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED, EnrollmentStatus.DROPPED],
+                    weights=[6, 3, 1],
+                )[0]
+                progress = (
+                    Decimal("100.00")
+                    if status == EnrollmentStatus.COMPLETED
+                    else Decimal(str(round(random.uniform(0, 95), 2)))
+                )
+                self.session.add(
+                    Enrollment(
+                        user_id=user.id,
+                        course_id=course.id,
+                        status=status,
+                        progress_percentage=progress,
+                        payment_amount=None if course.is_free else course.price,
+                        payment_currency=None if course.is_free else course.currency,
+                        total_time_spent_minutes=random.randint(0, 600),
+                        completed_at=utcnow() - timedelta(days=random.randint(0, 60))
+                        if status == EnrollmentStatus.COMPLETED
+                        else None,
+                    )
+                )
+                self.enrollments += 1
+                if status == EnrollmentStatus.COMPLETED and random.random() < 0.6:
+                    self.session.add(
+                        CourseReview(
+                            user_id=user.id,
+                            course_id=course.id,
+                            rating=random.randint(3, 5),
+                            title=fake.sentence(nb_words=5),
+                            content=fake.paragraph(),
+                            is_verified_purchase=not course.is_free,
+                        )
+                    )
+                    self.reviews += 1
         self.session.commit()
-        print(f"✓ Generated {enrollments_created} course enrollments")
+        print(f"  created {self.enrollments} enrollments and {self.reviews} reviews")
 
-    def generate_sample_files(self):
-        """Generate sample file records (without actual files)"""
-        print("Generating sample file records...")
+    def generate_files(self) -> None:
+        print("Generating file-upload records (metadata only)...")
+        extensions = {"pdf": "application/pdf", "png": "image/png", "docx": "application/msword"}
+        for user in random.sample(self.users, k=min(20, len(self.users))):
+            for _ in range(random.randint(0, 4)):
+                ext, mime = random.choice(list(extensions.items()))
+                name = f"{fake.word()}-{fake.word()}.{ext}"
+                self.session.add(
+                    FileUpload(
+                        user_id=user.id,
+                        filename=f"{fake.uuid4()}.{ext}",
+                        original_filename=name,
+                        file_path=f"{settings.UPLOAD_PATH}/{user.id}/{name}",
+                        file_size=random.randint(10_000, 5_000_000),
+                        content_type=mime,
+                        category=random.choice(["documents", "images", "general"]),
+                        is_public=random.random() < 0.3,
+                        download_count=random.randint(0, 40),
+                    )
+                )
+                self.files += 1
+        self.session.commit()
+        print(f"  created {self.files} file records")
 
-        # This would create file upload records
-        # In a real implementation, you'd have a File model
-        file_types = [".pdf", ".docx", ".mp4", ".jpg", ".png"]
-        files_created = 0
+    # ------------------------------------------------------------------
 
-        for _user in random.sample(self.created_users, min(20, len(self.created_users))):
-            num_files = random.randint(0, 5)
-            for _ in range(num_files):
-                f"{fake.word()}{random.choice(file_types)}"
-                # Create file record logic would go here
-                files_created += 1
+    @staticmethod
+    def _course_title() -> str:
+        tech = random.choice(
+            ["Python", "FastAPI", "React", "SQL", "Docker", "AWS", "Machine Learning", "Testing"]
+        )
+        action = random.choice(["Complete Guide to", "Master", "Practical", "Introduction to"])
+        descriptor = random.choice(["for Beginners", "from Scratch", "Masterclass", "Bootcamp"])
+        return random.choice(
+            [f"{action} {tech} {descriptor}", f"{tech} {descriptor}", f"{action} {tech}"]
+        )
 
-        print(f"✓ Generated {files_created} file records")
-
-    def print_summary(self):
-        """Print generation summary"""
+    def print_summary(self) -> None:
         print("\n" + "=" * 50)
         print("DATA GENERATION SUMMARY")
         print("=" * 50)
-        print(f"Users created: {len(self.created_users)}")
-        print(f"Courses created: {len(self.created_courses)}")
-        print(f"Active users: {sum(1 for u in self.created_users if u.is_active)}")
-        print(f"Published courses: {sum(1 for c in self.created_courses if c.is_published)}")
-        print("\nTest Accounts:")
-        print("- Email: admin@example.com, Password: admin123 (Admin)")
-        print("- All other users: Password: password123")
-        print("=" * 50)
+        print(f"Users:        {len(self.users)}")
+        print(
+            f"Courses:      {len(self.courses)} ({sum(c.is_published for c in self.courses)} published)"
+        )
+        print(f"Enrollments:  {self.enrollments}")
+        print(f"Reviews:      {self.reviews}")
+        print(f"File records: {self.files}")
+        print(f"\nAdmin login: {ADMIN_EMAIL} / {ADMIN_PASSWORD}")
+        print(f"Other users: <any email above> / {USER_PASSWORD}")
 
 
-def clear_existing_data(session):
-    """Clear existing test data"""
+def clear_existing_data(session: Session) -> None:
     print("Clearing existing data...")
-    session.query(Course).delete()
-    session.query(User).delete()
+    for model in (CourseReview, Enrollment, FileUpload, Course, User):
+        session.execute(delete(model))
     session.commit()
-    print("✓ Cleared existing data")
 
 
-async def main():
-    """Main function to generate all fake data"""
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate fake users, courses and enrollments.")
+    parser.add_argument("--users", type=int, default=50, help="number of users (default: 50)")
+    parser.add_argument("--courses", type=int, default=30, help="number of courses (default: 30)")
+    parser.add_argument("--clear", action="store_true", help="delete existing rows first")
+    parser.add_argument("-y", "--yes", action="store_true", help="never prompt")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
     print("FastAPIVerseHub Fake Data Generator")
     print("==================================")
 
-    # Create database session
-    session = SessionLocal()
-
-    try:
-        # Ask user if they want to clear existing data
-        clear_data = input("Clear existing data? (y/N): ").lower().strip()
-        if clear_data == "y":
+    engine = create_engine(sync_database_url())
+    session_factory = sessionmaker(bind=engine, autoflush=False)
+    with session_factory() as session:
+        clear = args.clear
+        if not args.yes and not clear:
+            clear = input("Clear existing data? (y/N): ").lower().strip() == "y"
+        if clear:
             clear_existing_data(session)
 
-        # Initialize data generator
         generator = DataGenerator(session)
-
-        # Get user input for data amounts
-        try:
-            user_count = int(input("Number of users to generate (default 50): ") or 50)
-            course_count = int(input("Number of courses to generate (default 30): ") or 30)
-        except ValueError:
-            print("Invalid input, using defaults...")
-            user_count = 50
-            course_count = 30
-
-        # Generate data
-        print("\nGenerating data...")
-        generator.generate_users(user_count)
-        generator.generate_courses(course_count)
-        generator.generate_user_course_enrollments()
-        generator.generate_sample_files()
-
-        # Print summary
+        generator.generate_users(args.users)
+        generator.generate_courses(args.courses)
+        generator.generate_enrollments()
+        generator.generate_files()
         generator.print_summary()
-
-    except Exception as e:
-        print(f"Error generating data: {e}")
-        session.rollback()
-        raise
-
-    finally:
-        session.close()
 
 
 if __name__ == "__main__":
-    # Install required packages if not present
-    import importlib.util
-
-    if importlib.util.find_spec("faker") is None:
-        print("Installing required packages...")
-        os.system("pip install faker")
-
-    # Run the data generation
-    asyncio.run(main())
+    main()

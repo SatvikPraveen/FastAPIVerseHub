@@ -1,19 +1,29 @@
-# File Location: docker-compose.yml
+# Local development stack. `docker compose up -d` gives you the API, Postgres
+# and Redis with health-gated startup. Optional profiles:
+#   --profile admin        pgAdmin + Redis Commander
+#   --profile monitoring   Prometheus + Grafana scraping /metrics
+#   --profile production   nginx in front of the API
 
-version: "3.8"
+x-app-env: &app-env
+  ENVIRONMENT: development
+  DEBUG: "true"
+  LOG_FORMAT: console
+  DATABASE_URL: postgresql://fastapi_user:fastapi_pass@db:5432/fastapi_verse_hub
+  REDIS_URL: redis://redis:6379/0
+  JWT_SECRET_KEY: dev-only-jwt-secret-key-not-for-production-use-0123456789
+  CORS_ORIGINS: http://localhost:3000,http://localhost:8080
 
 services:
-  # FastAPI Application
   app:
-    build: .
+    build:
+      context: .
+      target: runtime
+    image: fastapiversehub:dev
     ports:
       - "8000:8000"
     environment:
-      - ENVIRONMENT=development
-      - DATABASE_URL=postgresql://fastapi_user:fastapi_pass@db:5432/fastapi_verse_hub
-      - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY=dev-secret-key-change-in-production
-      - JWT_SECRET_KEY=dev-jwt-secret-key
+      <<: *app-env
+      WEB_CONCURRENCY: "1"
     depends_on:
       db:
         condition: service_healthy
@@ -24,22 +34,20 @@ services:
       - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
-  # PostgreSQL Database
   db:
-    image: postgres:15
+    image: postgres:16-alpine
     environment:
-      - POSTGRES_DB=fastapi_verse_hub
-      - POSTGRES_USER=fastapi_user
-      - POSTGRES_PASSWORD=fastapi_pass
+      POSTGRES_DB: fastapi_verse_hub
+      POSTGRES_USER: fastapi_user
+      POSTGRES_PASSWORD: fastapi_pass
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "5432:5432"
     restart: unless-stopped
@@ -49,9 +57,9 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis Cache
   redis:
     image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:
@@ -62,61 +70,79 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
 
-  # Nginx (Optional - for production)
+  # --- optional: reverse proxy -------------------------------------------
   nginx:
-    image: nginx:alpine
+    image: nginx:1.27-alpine
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./uploads:/var/www/uploads:ro
+      - ./uploads:/app/uploads:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: [production]
+
+  # --- optional: monitoring ------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
     depends_on:
       - app
-    restart: unless-stopped
-    profiles:
-      - production
+    profiles: [monitoring]
 
-  # pgAdmin (Optional - for database management)
-  pgadmin:
-    image: dpage/pgadmin4
+  grafana:
+    image: grafana/grafana:11.2.0
     environment:
-      - PGADMIN_DEFAULT_EMAIL=admin@example.com
-      - PGADMIN_DEFAULT_PASSWORD=admin
-      - PGADMIN_LISTEN_PORT=80
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+    volumes:
+      - ./docker/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    profiles: [monitoring]
+
+  # --- optional: admin tools -----------------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4:8
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_LISTEN_PORT: 80
     ports:
       - "5050:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     depends_on:
       - db
-    restart: unless-stopped
-    profiles:
-      - development
-      - admin
+    profiles: [admin]
 
-  # Redis Commander (Optional - for Redis management)
   redis-commander:
     image: rediscommander/redis-commander:latest
     environment:
-      - REDIS_HOSTS=local:redis:6379
-      - HTTP_USER=admin
-      - HTTP_PASSWORD=admin
+      REDIS_HOSTS: local:redis:6379
+      HTTP_USER: admin
+      HTTP_PASSWORD: admin
     ports:
       - "8081:8081"
     depends_on:
       - redis
-    restart: unless-stopped
-    profiles:
-      - development
-      - admin
+    profiles: [admin]
 
 volumes:
   postgres_data:
   redis_data:
   pgadmin_data:
-
-networks:
-  default:
-    driver: bridge
+  prometheus_data:
+  grafana_data:
