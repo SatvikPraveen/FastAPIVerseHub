@@ -58,7 +58,7 @@ WebSockets/SSE, and a CI pipeline that keeps lint, types and tests green.
 
 ### Engineering
 
-- 🧪 **145+ tests** on in-memory SQLite + fakeredis; no external services needed
+- 🧪 **300+ tests** (82% coverage) on in-memory SQLite + fakeredis; no external services needed
 - 🧹 **ruff + mypy** - zero lint findings, zero type errors, both blocking in CI
 - ⚙️ **GitHub Actions** - lint, typecheck, test matrix (3.11/3.12), Docker build, OpenAPI artefact
 - 🤖 **Dependabot**, pre-commit hooks, Makefile
@@ -667,7 +667,7 @@ This project serves as a comprehensive learning resource and production-ready te
 
 ## 📊 Project Statistics
 
-- **🧪 Tests**: 145+ (unit, integration, migration drift, concurrency)
+- **🧪 Tests**: 300+ at 82% coverage (unit, API, migration drift, concurrency, security flows)
 - **🧹 Lint / types**: ruff clean, mypy 0 errors
 - **📋 API Endpoints**: 60+ across v1 and v2
 - **📚 Docs**: 8 guides + 17 ADRs, plus a changelog
