@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,11 +18,11 @@ class LearningPath:
     id: int
     title: str
     description: str
-    courses: List[Dict[str, Any]]
+    courses: list[dict[str, Any]]
     estimated_duration_weeks: int
     difficulty: str
     completion_rate: float = 0.0
-    user_progress: Dict[str, float] = field(default_factory=dict)
+    user_progress: dict[str, float] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.utcnow)
 
 
@@ -36,7 +36,7 @@ class AdvancedCourseService:
     # User learning profile
     # ------------------------------------------------------------------
 
-    async def get_user_learning_profile(self, user_id: int) -> Dict[str, Any]:
+    async def get_user_learning_profile(self, user_id: int) -> dict[str, Any]:
         """Aggregate learning history and preferences for a user."""
         user_q = select(User).where(User.id == user_id)
         result = await self.db.execute(user_q)
@@ -71,10 +71,10 @@ class AdvancedCourseService:
 
     async def get_learning_paths(
         self,
-        category: Optional[str] = None,
-        difficulty: Optional[str] = None,
-        user_id: Optional[int] = None,
-    ) -> List[LearningPath]:
+        category: str | None = None,
+        difficulty: str | None = None,
+        user_id: int | None = None,
+    ) -> list[LearningPath]:
         """Return available learning paths (stub — extend with a DB model when ready)."""
         # Placeholder: return sensible defaults until a LearningPath DB model exists.
         paths = [
@@ -106,7 +106,7 @@ class AdvancedCourseService:
         return paths
 
     async def save_learning_path(
-        self, user_id: int, learning_path_data: Dict[str, Any]
+        self, user_id: int, learning_path_data: dict[str, Any]
     ) -> LearningPath:
         """Persist a generated learning path (stub returns an in-memory object)."""
         return LearningPath(
@@ -121,13 +121,12 @@ class AdvancedCourseService:
     async def send_learning_path_notification(self, user_id: int, path_id: int) -> None:
         """Background task: notify user about their new learning path."""
         # Notification sending would be wired to EmailService / push notifications.
-        pass
 
     # ------------------------------------------------------------------
     # Course helpers
     # ------------------------------------------------------------------
 
-    async def get_course_by_id(self, course_id: int) -> Optional[Course]:
+    async def get_course_by_id(self, course_id: int) -> Course | None:
         """Retrieve a course by its primary key."""
         query = select(Course).where(Course.id == course_id)
         result = await self.db.execute(query)
@@ -135,7 +134,7 @@ class AdvancedCourseService:
 
     async def get_course_performance_data(
         self, course_id: int, time_range: str = "30d"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get aggregated performance data for a course."""
         course = await self.get_course_by_id(course_id)
         if not course:
@@ -157,13 +156,13 @@ class AdvancedCourseService:
         }
 
     async def save_optimization_report(
-        self, course_id: int, report: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, course_id: int, report: dict[str, Any]
+    ) -> dict[str, Any]:
         """Persist an AI-generated optimization report (stub)."""
         return {"course_id": course_id, "report": report, "saved_at": datetime.utcnow().isoformat()}
 
     async def apply_optimization_suggestions(
-        self, course_id: int, suggestions: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        self, course_id: int, suggestions: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         """Apply automated optimization suggestions to a course (stub)."""
         return {"course_id": course_id, "applied": len(suggestions), "status": "queued"}

@@ -1,7 +1,7 @@
 # File: app/services/file_service.py
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from sqlalchemy import Integer, and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,10 +23,10 @@ class FileService:
         file_size: int,
         content_type: str,
         user_id: int,
-        description: Optional[str] = None,
+        description: str | None = None,
         category: str = "general",
         is_public: bool = False,
-        file_hash: Optional[str] = None,
+        file_hash: str | None = None,
     ) -> FileUpload:
         """Create a new file record in the database."""
         file_record = FileUpload(
@@ -46,7 +46,7 @@ class FileService:
         await self.db.refresh(file_record)
         return file_record
 
-    async def get_file_by_id(self, file_id: int) -> Optional[FileUpload]:
+    async def get_file_by_id(self, file_id: int) -> FileUpload | None:
         """Retrieve a file record by its ID."""
         query = select(FileUpload).where(
             and_(FileUpload.id == file_id, FileUpload.is_deleted.is_(False))
@@ -59,8 +59,8 @@ class FileService:
         user_id: int,
         skip: int = 0,
         limit: int = 50,
-        category: Optional[str] = None,
-    ) -> Tuple[List[FileUpload], int]:
+        category: str | None = None,
+    ) -> tuple[list[FileUpload], int]:
         """Return paginated file records for a user."""
         base_filter = and_(FileUpload.user_id == user_id, FileUpload.is_deleted.is_(False))
         if category:
@@ -96,10 +96,10 @@ class FileService:
         self,
         file_id: int,
         user_id: int,
-        description: Optional[str] = None,
-        category: Optional[str] = None,
-        is_public: Optional[bool] = None,
-    ) -> Optional[FileUpload]:
+        description: str | None = None,
+        category: str | None = None,
+        is_public: bool | None = None,
+    ) -> FileUpload | None:
         """Update mutable metadata fields of a file record."""
         file_record = await self.get_file_by_id(file_id)
         if not file_record or file_record.user_id != user_id:
@@ -120,10 +120,10 @@ class FileService:
     async def update_file_info(
         self,
         file_id: int,
-        description: Optional[str] = None,
-        category: Optional[str] = None,
-        is_public: Optional[bool] = None,
-    ) -> Optional[FileUpload]:
+        description: str | None = None,
+        category: str | None = None,
+        is_public: bool | None = None,
+    ) -> FileUpload | None:
         """Update metadata on a file the caller has already authorised.
 
         Ownership is enforced by the router; ``update_file_metadata`` is the
@@ -152,7 +152,7 @@ class FileService:
         )
         await self.db.commit()
 
-    async def get_categories_with_counts(self, user_id: int) -> List[Dict[str, Any]]:
+    async def get_categories_with_counts(self, user_id: int) -> list[dict[str, Any]]:
         """Return ``[{"name": category, "count": n}, ...]`` for a user's live files."""
         query = (
             select(FileUpload.category, func.count(FileUpload.id))
@@ -163,23 +163,20 @@ class FileService:
         result = await self.db.execute(query)
         return [{"name": name or "general", "count": count} for name, count in result.all()]
 
-    async def get_user_file_stats(self, user_id: int) -> Dict[str, Any]:
+    async def get_user_file_stats(self, user_id: int) -> dict[str, Any]:
         """Aggregate storage statistics for a user in a single round trip."""
         live = and_(FileUpload.user_id == user_id, FileUpload.is_deleted.is_(False))
         query = select(
             func.count(FileUpload.id),
             func.coalesce(func.sum(FileUpload.file_size), 0),
             func.coalesce(func.sum(FileUpload.download_count), 0),
-            func.coalesce(
-                func.sum(func.cast(FileUpload.is_public, Integer)), 0
-            ),
+            func.coalesce(func.sum(func.cast(FileUpload.is_public, Integer)), 0),
         ).where(live)
         total_files, total_size, total_downloads, public_files = (
             await self.db.execute(query)
         ).one()
         categories = {
-            item["name"]: item["count"]
-            for item in await self.get_categories_with_counts(user_id)
+            item["name"]: item["count"] for item in await self.get_categories_with_counts(user_id)
         }
         return {
             "total_files": int(total_files or 0),

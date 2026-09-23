@@ -2,12 +2,12 @@
 
 import asyncio
 from logging.config import fileConfig
-from typing import Optional
 
-from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
+
+from alembic import context
 
 # Alembic Config object
 config = context.config
@@ -18,8 +18,8 @@ if config.config_file_name is not None:
 
 # Import the shared metadata so Alembic can generate migrations.
 # Importing app.models ensures ALL model classes are registered on Base.metadata.
-from app.core.config import settings
 import app.models  # noqa: F401 — registers all tables
+from app.core.config import settings
 from app.models.base import Base
 
 target_metadata = Base.metadata

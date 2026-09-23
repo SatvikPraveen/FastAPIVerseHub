@@ -9,7 +9,7 @@ name = "fastapi-verse-hub"
 version = "1.0.0"
 description = "A comprehensive FastAPI learning and demonstration project"
 authors = [
-    {name = "FastAPI Verse Hub Team", email = "team@fastapiversehub.com"}
+    {name = "Satvik Praveen", email = "satvikpraveen707@gmail.com"}
 ]
 readme = "README.md"
 license = {text = "MIT"}
@@ -22,6 +22,9 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
     "Framework :: FastAPI",
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     "Topic :: Education",
@@ -92,10 +95,8 @@ dev = [
     "fakeredis>=2.20.0",
     
     # Code quality
-    "black>=23.11.0",
-    "flake8>=6.1.0",
-    "mypy>=1.7.0",
-    "isort>=5.12.0",
+    "ruff>=0.6.0",
+    "mypy>=1.10.0",
     "pre-commit>=3.6.0",
     
     # Development tools
@@ -127,10 +128,10 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/fastapi-verse-hub"
-Repository = "https://github.com/yourusername/fastapi-verse-hub.git"
-Documentation = "https://yourusername.github.io/fastapi-verse-hub/"
-Issues = "https://github.com/yourusername/fastapi-verse-hub/issues"
+Homepage = "https://github.com/SatvikPraveen/FastAPIVerseHub"
+Repository = "https://github.com/SatvikPraveen/FastAPIVerseHub.git"
+Documentation = "https://github.com/SatvikPraveen/FastAPIVerseHub/tree/main/docs"
+Issues = "https://github.com/SatvikPraveen/FastAPIVerseHub/issues"
 
 [project.scripts]
 fastapi-verse-hub = "app.main:main"
@@ -144,56 +145,66 @@ include = ["app*"]
 [tool.setuptools.package-data]
 "app" = ["templates/*.html", "static/*"]
 
-[tool.black]
-line-length = 88
-target-version = ['py311']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # Directories
-  \.eggs
-  | \.git
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-  | migrations
-)/
-'''
 
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 88
-known_first_party = ["app"]
-skip = ["migrations"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["alembic/versions", ".venv", "build", "dist", "generate_fastapi_project.sh"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # isort
+    "UP",        # pyupgrade
+    "B",         # flake8-bugbear
+    "SIM",       # flake8-simplify
+    "ASYNC",     # flake8-async
+    "RUF",       # ruff-specific
+    "PIE",       # flake8-pie
+    "C4",        # comprehensions
+]
+ignore = [
+    "B008",      # function calls in argument defaults are the FastAPI Depends() idiom
+    "E501",      # line length is enforced by the formatter
+    "RUF012",    # mutable class attributes (SQLAlchemy / pydantic patterns)
+    "SIM108",    # ternary-vs-if is a style call
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"alembic/env.py" = ["E402"]
+"app/tests/*" = ["B017", "ASYNC", "RUF029"]
+"scripts/*" = ["E402", "ASYNC250"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.format]
+quote-style = "double"
 
 [tool.mypy]
 python_version = "3.11"
-warn_return_any = true
+plugins = ["pydantic.mypy"]
+exclude = ["app/tests/", "scripts/", "alembic/", "build/", "dist/"]
 warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
 warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_unreachable = true
+warn_unused_ignores = false
+check_untyped_defs = true
+no_implicit_optional = true
 strict_equality = true
 show_error_codes = true
+pretty = true
+ignore_missing_imports = true
+# Tighten module-by-module as annotations land:
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
 
 [[tool.mypy.overrides]]
-module = [
-    "redis.*",
-    "jose.*",
-    "sqlalchemy.*",
-    "alembic.*",
-    "faker.*",
-    "magic.*",
-]
-ignore_missing_imports = true
+module = ["app.core.security", "app.core.config", "app.services.file_service"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
 
 [tool.pytest.ini_options]
 testpaths = ["app/tests"]
@@ -248,22 +259,6 @@ exclude_lines = [
     "@(abc\\.)?abstractmethod",
 ]
 
-[tool.flake8]
-max-line-length = 88
-extend-ignore = ["E203", "W503", "E501"]
-exclude = [
-    ".git",
-    "__pycache__",
-    ".venv",
-    "venv",
-    "migrations",
-    "build",
-    "dist",
-]
-per-file-ignores = [
-    "__init__.py:F401",
-    "conftest.py:F401,F811",
-]
 
 [tool.bandit]
 exclude_dirs = ["tests", "migrations"]

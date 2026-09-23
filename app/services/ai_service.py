@@ -1,7 +1,7 @@
 # File: app/services/ai_service.py
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class AIService:
@@ -18,12 +18,12 @@ class AIService:
 
     async def generate_course_recommendations(
         self,
-        user_data: Dict[str, Any],
+        user_data: dict[str, Any],
         limit: int = 10,
         include_reasoning: bool = False,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Generate personalised course recommendations for a user profile."""
-        interests: List[str] = user_data.get("interests") or []
+        interests: list[str] = user_data.get("interests") or []
         skill_level: str = user_data.get("skill_level", "beginner")
 
         recommendations = [
@@ -36,7 +36,9 @@ class AIService:
                 "reasoning": (
                     f"Based on your interest in {', '.join(interests[:2]) or 'general topics'} "
                     f"and {skill_level} skill level."
-                ) if include_reasoning else None,
+                )
+                if include_reasoning
+                else None,
             }
             for i in range(min(limit, 5))
         ]
@@ -45,12 +47,12 @@ class AIService:
     async def generate_custom_recommendations(
         self,
         user_id: int,
-        interests: List[str],
+        interests: list[str],
         skill_level: str,
-        learning_goals: List[str],
+        learning_goals: list[str],
         time_commitment: int,
-        preferred_formats: List[str],
-    ) -> List[Dict[str, Any]]:
+        preferred_formats: list[str],
+    ) -> list[dict[str, Any]]:
         """Generate recommendations based on explicit user-supplied criteria."""
         return [
             {
@@ -72,12 +74,12 @@ class AIService:
     async def create_learning_path(
         self,
         goal: str,
-        current_skills: List[str],
-        target_skills: List[str],
+        current_skills: list[str],
+        target_skills: list[str],
         timeline_weeks: int,
         difficulty_preference: str,
         user_id: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate a structured learning path to achieve a stated goal."""
         skill_gap = [s for s in target_skills if s not in current_skills]
         courses = [
@@ -112,10 +114,10 @@ class AIService:
     async def analyze_course_optimization(
         self,
         course_id: int,
-        optimization_goals: List[str],
-        target_metrics: Dict[str, float],
-        performance_data: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        optimization_goals: list[str],
+        target_metrics: dict[str, float],
+        performance_data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Analyse a course and propose optimisation suggestions."""
         suggestions = [
             {

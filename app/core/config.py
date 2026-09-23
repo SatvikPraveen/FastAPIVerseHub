@@ -2,7 +2,7 @@
 
 import os
 from functools import lru_cache
-from typing import Any, List, Optional
+from typing import Any
 
 from pydantic import EmailStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,70 +24,70 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     ENVIRONMENT: str = "development"
-    
+
     # Database
-    DATABASE_URL: Optional[str] = None
+    DATABASE_URL: str | None = None
     DATABASE_HOST: str = "localhost"
     DATABASE_PORT: int = 5432
     DATABASE_NAME: str = "fastapi_db"
     DATABASE_USER: str = "fastapi_user"
     DATABASE_PASSWORD: str = "fastapi_pass"
-    
+
     # Redis
-    REDIS_URL: Optional[str] = None
+    REDIS_URL: str | None = None
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
-    
+
     # JWT & Security
     JWT_SECRET_KEY: str = "change-me-in-production-use-a-long-random-string"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    
+
     # OAuth2 (Optional)
-    GOOGLE_CLIENT_ID: Optional[str] = None
-    GOOGLE_CLIENT_SECRET: Optional[str] = None
-    GITHUB_CLIENT_ID: Optional[str] = None
-    GITHUB_CLIENT_SECRET: Optional[str] = None
-    
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
+    GITHUB_CLIENT_ID: str | None = None
+    GITHUB_CLIENT_SECRET: str | None = None
+
     # Email
     EMAIL_HOST: str = "localhost"
     EMAIL_PORT: int = 587
-    EMAIL_USER: Optional[str] = None
-    EMAIL_PASSWORD: Optional[str] = None
+    EMAIL_USER: str | None = None
+    EMAIL_PASSWORD: str | None = None
     EMAIL_FROM: EmailStr = "noreply@fastapiversehub.com"
     EMAIL_USE_TLS: bool = True
-    
+
     # File Upload
     MAX_FILE_SIZE: int = 10485760  # 10MB
     UPLOAD_PATH: str = "./uploads"
     ALLOWED_EXTENSIONS: str = "jpg,jpeg,png,gif,pdf,txt,docx,xlsx"
-    
+
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_BURST: int = 100
-    
+
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8080"
     CORS_CREDENTIALS: bool = True
     CORS_METHODS: str = "GET,POST,PUT,DELETE,OPTIONS,PATCH"
     CORS_HEADERS: str = "*"
-    
+
     # Celery
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
-    
+
     # Logging
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "./logs/app.log"
     LOG_MAX_SIZE: int = 10485760  # 10MB
     LOG_BACKUP_COUNT: int = 5
-    
+
     # Monitoring
     PROMETHEUS_ENABLED: bool = True
     HEALTH_CHECK_TIMEOUT: int = 5
-    
+
     @model_validator(mode="before")
     @classmethod
     def build_urls(cls, values: Any) -> Any:
@@ -101,9 +101,7 @@ class Settings(BaseSettings):
             host = values.get("DATABASE_HOST", "localhost")
             port = values.get("DATABASE_PORT", 5432)
             database = values.get("DATABASE_NAME", "fastapi_db")
-            values["DATABASE_URL"] = (
-                f"postgresql://{user}:{password}@{host}:{port}/{database}"
-            )
+            values["DATABASE_URL"] = f"postgresql://{user}:{password}@{host}:{port}/{database}"
 
         if not values.get("REDIS_URL"):
             host = values.get("REDIS_HOST", "localhost")
@@ -112,26 +110,26 @@ class Settings(BaseSettings):
             values["REDIS_URL"] = f"redis://{host}:{port}/{db}"
 
         return values
-    
+
     @property
-    def cors_origins_list(self) -> List[str]:
+    def cors_origins_list(self) -> list[str]:
         """Get CORS origins as a list."""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
-    
+
     @property
-    def cors_methods_list(self) -> List[str]:
+    def cors_methods_list(self) -> list[str]:
         """Get CORS methods as a list."""
         return [method.strip() for method in self.CORS_METHODS.split(",")]
-    
+
     @property
-    def allowed_extensions_list(self) -> List[str]:
+    def allowed_extensions_list(self) -> list[str]:
         """Get allowed file extensions as a list."""
         return [ext.strip().lower() for ext in self.ALLOWED_EXTENSIONS.split(",")]
-    
+
     def create_upload_path(self) -> None:
         """Create upload directory if it doesn't exist."""
         os.makedirs(self.UPLOAD_PATH, exist_ok=True)
-    
+
     def create_log_path(self) -> None:
         """Create log directory if it doesn't exist."""
         log_dir = os.path.dirname(self.LOG_FILE)
@@ -139,7 +137,7 @@ class Settings(BaseSettings):
             os.makedirs(log_dir, exist_ok=True)
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()

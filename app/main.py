@@ -1,8 +1,9 @@
 # File: app/main.py
 
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Dict
+from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Request, status
@@ -31,16 +32,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     print(f"🚀 {settings.APP_NAME} v{settings.APP_VERSION} starting up...")
     print(f"📊 Environment: {settings.ENVIRONMENT}")
     print(f"🔧 Debug mode: {settings.DEBUG}")
-    
+
     yield
-    
+
     # Shutdown
     print(f"👋 {settings.APP_NAME} shutting down...")
 
 
 def create_application() -> FastAPI:
     """Create and configure the FastAPI application."""
-    
+
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
@@ -53,36 +54,33 @@ def create_application() -> FastAPI:
 
     # Add middleware
     setup_middleware(app)
-    
+
     # Add routers
     setup_routers(app)
-    
+
     # Add exception handlers
     setup_exception_handlers(app)
-    
+
     return app
 
 
 def setup_middleware(app: FastAPI) -> None:
     """Configure application middleware."""
-    
+
     # Session middleware
-    app.add_middleware(
-        SessionMiddleware,
-        secret_key=settings.JWT_SECRET_KEY
-    )
-    
+    app.add_middleware(SessionMiddleware, secret_key=settings.JWT_SECRET_KEY)
+
     # Custom middleware
     app.add_middleware(RequestTimingMiddleware)
     app.add_middleware(RateLimitMiddleware)
-    
+
     # CORS middleware
     setup_cors(app)
 
 
 def setup_routers(app: FastAPI) -> None:
     """Configure API routers."""
-    
+
     # Health check endpoint
     @app.get("/health")
     async def health_check():
@@ -90,9 +88,9 @@ def setup_routers(app: FastAPI) -> None:
             "status": "healthy",
             "app": settings.APP_NAME,
             "version": settings.APP_VERSION,
-            "environment": settings.ENVIRONMENT
+            "environment": settings.ENVIRONMENT,
         }
-    
+
     # Root endpoint
     @app.get("/")
     async def root():
@@ -100,57 +98,23 @@ def setup_routers(app: FastAPI) -> None:
             "message": f"Welcome to {settings.APP_NAME}!",
             "version": settings.APP_VERSION,
             "docs": "/docs",
-            "health": "/health"
+            "health": "/health",
         }
-    
+
     # API v1 routes
-    app.include_router(
-        auth.router,
-        prefix="/api/v1/auth",
-        tags=["Authentication"]
-    )
-    app.include_router(
-        users.router,
-        prefix="/api/v1/users",
-        tags=["Users"]
-    )
-    app.include_router(
-        courses.router,
-        prefix="/api/v1/courses",
-        tags=["Courses"]
-    )
-    app.include_router(
-        uploads.router,
-        prefix="/api/v1/uploads",
-        tags=["File Uploads"]
-    )
-    app.include_router(
-        forms.router,
-        prefix="/api/v1/forms",
-        tags=["Form Handling"]
-    )
-    app.include_router(
-        websocket.router,
-        prefix="/api/v1/ws",
-        tags=["WebSocket"]
-    )
-    app.include_router(
-        sse.router,
-        prefix="/api/v1/sse",
-        tags=["Server-Sent Events"]
-    )
-    
+    app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
+    app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
+    app.include_router(courses.router, prefix="/api/v1/courses", tags=["Courses"])
+    app.include_router(uploads.router, prefix="/api/v1/uploads", tags=["File Uploads"])
+    app.include_router(forms.router, prefix="/api/v1/forms", tags=["Form Handling"])
+    app.include_router(websocket.router, prefix="/api/v1/ws", tags=["WebSocket"])
+    app.include_router(sse.router, prefix="/api/v1/sse", tags=["Server-Sent Events"])
+
     # API v2 routes (Advanced features)
     app.include_router(
-        advanced_auth.router,
-        prefix="/api/v2/auth",
-        tags=["Advanced Authentication"]
+        advanced_auth.router, prefix="/api/v2/auth", tags=["Advanced Authentication"]
     )
-    app.include_router(
-        advanced_courses.router,
-        prefix="/api/v2/courses",
-        tags=["Advanced Courses"]
-    )
+    app.include_router(advanced_courses.router, prefix="/api/v2/courses", tags=["Advanced Courses"])
 
 
 _STATUS_ERROR_CODES = {
@@ -184,9 +148,10 @@ def setup_exception_handlers(app: FastAPI) -> None:
     so clients can branch on ``error`` without parsing prose.
     """
 
-    def _envelope(request: Request, status_code: int, error: str, message: str,
-                  details: Any = None) -> JSONResponse:
-        body: Dict[str, Any] = {
+    def _envelope(
+        request: Request, status_code: int, error: str, message: str, details: Any = None
+    ) -> JSONResponse:
+        body: dict[str, Any] = {
             "error": error,
             "message": message,
             "details": details or {},
@@ -213,13 +178,17 @@ def setup_exception_handlers(app: FastAPI) -> None:
         if exc.status_code == 404 and not exc.detail:
             message = "The requested resource was not found"
             details = {"path": request.url.path}
-        response = _envelope(request, exc.status_code, _error_code_for(exc.status_code), message, details)
+        response = _envelope(
+            request, exc.status_code, _error_code_for(exc.status_code), message, details
+        )
         if exc.headers:
             response.headers.update(exc.headers)
         return response
 
     @app.exception_handler(RequestValidationError)
-    async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    async def validation_exception_handler(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
         errors = [
             {
                 "field": ".".join(str(loc) for loc in err.get("loc", ()) if loc != "body"),
@@ -239,7 +208,9 @@ def setup_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         logger.exception(
-            "Unhandled exception on %s %s", request.method, request.url.path,
+            "Unhandled exception on %s %s",
+            request.method,
+            request.url.path,
             extra={"request_id": getattr(request.state, "request_id", None)},
         )
         return _envelope(
@@ -254,11 +225,16 @@ def setup_exception_handlers(app: FastAPI) -> None:
 app = create_application()
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Console entry point (``fastapi-verse-hub``)."""
     uvicorn.run(
         "app.main:app",
         host=settings.HOST,
         port=settings.PORT,
         reload=settings.DEBUG,
-        log_level=settings.LOG_LEVEL.lower()
+        log_level=settings.LOG_LEVEL.lower(),
     )
+
+
+if __name__ == "__main__":
+    main()

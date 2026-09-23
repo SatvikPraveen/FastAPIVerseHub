@@ -2,11 +2,11 @@
 
 import os
 import uuid
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
+import aiofiles
 from fastapi import UploadFile
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import FormSubmission, Survey
@@ -28,7 +28,7 @@ class FormService:
         email: str,
         subject: str,
         message: str,
-        phone: Optional[str] = None,
+        phone: str | None = None,
     ) -> FormSubmission:
         """Persist a contact-form submission."""
         data = {
@@ -53,7 +53,7 @@ class FormService:
 
     async def save_feedback_form(
         self,
-        user_id: Optional[int],
+        user_id: int | None,
         rating: int,
         title: str,
         description: str,
@@ -83,7 +83,7 @@ class FormService:
     # Survey
     # ------------------------------------------------------------------
 
-    async def get_survey_by_id(self, survey_id: int) -> Optional[Survey]:
+    async def get_survey_by_id(self, survey_id: int) -> Survey | None:
         """Retrieve a survey by its primary key."""
         query = select(Survey).where(Survey.id == survey_id)
         result = await self.db.execute(query)
@@ -92,9 +92,9 @@ class FormService:
     async def save_survey_response(
         self,
         survey_id: int,
-        user_id: Optional[int],
-        responses: Dict[str, Any],
-        completion_time_seconds: Optional[int] = None,
+        user_id: int | None,
+        responses: dict[str, Any],
+        completion_time_seconds: int | None = None,
     ) -> FormSubmission:
         """Persist a survey response submission."""
         submission = FormSubmission(
@@ -116,7 +116,7 @@ class FormService:
 
     async def save_uploaded_file(
         self, upload: UploadFile, user_id: int, sub_dir: str = "misc"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Write an uploaded file to disk and return metadata."""
         upload_root = os.path.join("uploads", sub_dir, str(user_id))
         os.makedirs(upload_root, exist_ok=True)
@@ -126,8 +126,8 @@ class FormService:
         file_path = os.path.join(upload_root, stored_name)
 
         content = await upload.read()
-        with open(file_path, "wb") as fh:
-            fh.write(content)
+        async with aiofiles.open(file_path, "wb") as fh:
+            await fh.write(content)
 
         return {
             "original_filename": upload.filename,

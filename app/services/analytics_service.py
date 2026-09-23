@@ -2,13 +2,12 @@
 
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.course import Course, Enrollment, EnrollmentStatus, CourseReview
-
+from app.models.course import Course, CourseReview, Enrollment, EnrollmentStatus
 
 _TIME_RANGE_DAYS = {"7d": 7, "30d": 30, "90d": 90, "1y": 365}
 
@@ -23,17 +22,13 @@ class AnalyticsService:
     # Course analytics
     # ------------------------------------------------------------------
 
-    async def get_course_analytics(
-        self, course_id: int, time_range: str = "30d"
-    ) -> Dict[str, Any]:
+    async def get_course_analytics(self, course_id: int, time_range: str = "30d") -> dict[str, Any]:
         """Return analytics data matching the CourseAnalytics schema."""
         days = _TIME_RANGE_DAYS.get(time_range, 30)
         since = datetime.utcnow() - timedelta(days=days)
 
         # Total enrollments
-        total_enroll_q = select(func.count(Enrollment.id)).where(
-            Enrollment.course_id == course_id
-        )
+        total_enroll_q = select(func.count(Enrollment.id)).where(Enrollment.course_id == course_id)
         total_enroll = (await self.db.execute(total_enroll_q)).scalar() or 0
 
         # Enrollments within time range
@@ -68,7 +63,7 @@ class AnalyticsService:
 
         return {
             "course_id": course_id,
-            "total_views": total_enroll,        # proxy until view tracking added
+            "total_views": total_enroll,  # proxy until view tracking added
             "total_enrollments": total_enroll,
             "conversion_rate": round(conversion_rate, 2),
             "completion_rate": round(completion_rate, 2),
@@ -91,15 +86,15 @@ class AnalyticsService:
 
     async def get_instructor_dashboard(
         self, instructor_id: int, time_range: str = "30d"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Return aggregated dashboard metrics for an instructor."""
         days = _TIME_RANGE_DAYS.get(time_range, 30)
-        since = datetime.utcnow() - timedelta(days=days)
+        datetime.utcnow() - timedelta(days=days)
 
         # Courses owned
         courses_q = select(Course).where(Course.instructor_id == instructor_id)
         courses_result = await self.db.execute(courses_q)
-        courses: List[Course] = list(courses_result.scalars().all())
+        courses: list[Course] = list(courses_result.scalars().all())
         course_ids = [c.id for c in courses]
 
         total_students = 0
@@ -122,9 +117,7 @@ class AnalyticsService:
             "total_revenue": 0.0,
             "avg_rating": round(avg_rating, 2),
             "recent_activity": [],
-            "top_courses": [
-                {"id": c.id, "title": c.title, "students": 0} for c in courses[:5]
-            ],
+            "top_courses": [{"id": c.id, "title": c.title, "students": 0} for c in courses[:5]],
             "engagement_metrics": {},
             "growth_metrics": {},
         }

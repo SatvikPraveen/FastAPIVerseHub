@@ -1,6 +1,6 @@
 # File: app/core/dependencies.py
 
-from typing import AsyncGenerator, Optional
+from collections.abc import AsyncGenerator
 
 import redis.asyncio as redis
 from fastapi import Depends, HTTPException, Request, status
@@ -16,17 +16,13 @@ from app.models.user import User
 engine = create_async_engine(
     settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://"),
     echo=settings.DEBUG,
-    future=True
+    future=True,
 )
 
-AsyncSessionLocal = sessionmaker(
-    engine, 
-    class_=AsyncSession, 
-    expire_on_commit=False
-)
+AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 # Redis setup
-redis_client: Optional[redis.Redis] = None
+redis_client: redis.Redis | None = None
 
 # Security
 security = HTTPBearer()
@@ -47,21 +43,17 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 async def get_redis() -> redis.Redis:
     """Dependency for Redis client."""
     global redis_client
-    
+
     if redis_client is None:
-        redis_client = redis.from_url(
-            settings.REDIS_URL,
-            encoding="utf-8",
-            decode_responses=True
-        )
-    
+        redis_client = redis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
+
     return redis_client
 
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
-    redis_client: redis.Redis = Depends(get_redis)
+    redis_client: redis.Redis = Depends(get_redis),
 ) -> User:
     """Dependency to get current authenticated user."""
     try:
@@ -87,6 +79,7 @@ async def get_current_user(
 
         # Get user from database
         from app.services.user_service import UserService
+
         user_service = UserService(db)
         user = await user_service.get_user_by_id(user_id)
 
@@ -98,51 +91,38 @@ async def get_current_user(
             )
 
         if not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Inactive user"
-            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
 
         return user
 
     except HTTPException:
         raise
-    except Exception:
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from exc
 
 
-async def get_current_active_user(
-    current_user: User = Depends(get_current_user)
-) -> User:
+async def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
     """Dependency to get current active user."""
     if not current_user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user"
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
     return current_user
 
 
-async def get_current_superuser(
-    current_user: User = Depends(get_current_user)
-) -> User:
+async def get_current_superuser(current_user: User = Depends(get_current_user)) -> User:
     """Dependency to get current superuser."""
     if not current_user.is_superuser:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
     return current_user
 
 
 async def get_current_user_optional(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
-    db: AsyncSession = Depends(get_db)
-) -> Optional[User]:
+    credentials: HTTPAuthorizationCredentials | None = Depends(HTTPBearer(auto_error=False)),
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
     """Optional dependency — returns current user if token present and valid, else None."""
     if not credentials:
         return None
@@ -155,6 +135,7 @@ async def get_current_user_optional(
         user_id = int(user_id_str)
 
         from app.services.user_service import UserService
+
         user_service = UserService(db)
         user = await user_service.get_user_by_id(user_id)
         return user if user and user.is_active else None
@@ -179,30 +160,30 @@ def get_client_ip(request: Request) -> str:
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
         return forwarded_for.split(",")[0].strip()
-    
+
     # Check for real IP header
     real_ip = request.headers.get("x-real-ip")
     if real_ip:
         return real_ip
-    
+
     # Fall back to client host
     if request.client:
         return request.client.host
-    
+
     return "unknown"
 
 
 class PaginationParams:
     """Pagination parameters for API endpoints."""
-    
+
     def __init__(self, skip: int = 0, limit: int = 100):
         self.skip = max(0, skip)
         self.limit = min(100, max(1, limit))
-    
+
     @property
     def offset(self) -> int:
         return self.skip
-    
+
     @property
     def page_size(self) -> int:
         return self.limit
@@ -215,17 +196,15 @@ def get_pagination_params(skip: int = 0, limit: int = 100) -> PaginationParams:
 
 class SearchParams:
     """Search parameters for API endpoints."""
-    
-    def __init__(self, q: Optional[str] = None, sort_by: Optional[str] = None, order: str = "asc"):
+
+    def __init__(self, q: str | None = None, sort_by: str | None = None, order: str = "asc"):
         self.query = q.strip() if q else None
         self.sort_by = sort_by
         self.order = order.lower() if order.lower() in ["asc", "desc"] else "asc"
 
 
 def get_search_params(
-    q: Optional[str] = None, 
-    sort_by: Optional[str] = None, 
-    order: str = "asc"
+    q: str | None = None, sort_by: str | None = None, order: str = "asc"
 ) -> SearchParams:
     """Dependency for search parameters."""
     return SearchParams(q, sort_by, order)
