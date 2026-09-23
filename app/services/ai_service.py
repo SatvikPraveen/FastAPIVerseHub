@@ -1,7 +1,8 @@
 # File: app/services/ai_service.py
 
-from datetime import datetime
 from typing import Any
+
+from app.core.time import utcnow
 
 
 class AIService:
@@ -104,7 +105,7 @@ class AIService:
             "estimated_duration_weeks": timeline_weeks,
             "difficulty_preference": difficulty_preference,
             "goal": goal,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": utcnow().isoformat(),
         }
 
     # ------------------------------------------------------------------
@@ -134,5 +135,5 @@ class AIService:
             "suggestions": suggestions,
             "overall_health_score": 72.5,
             "priority_actions": [s for s in suggestions if s["priority"] == "high"],
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": utcnow().isoformat(),
         }

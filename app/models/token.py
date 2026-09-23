@@ -1,18 +1,23 @@
 # File: app/models/token.py
+"""Credential models: generic tokens, refresh-token families and API keys."""
+
+from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
+from sqlalchemy import ForeignKey, Index, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base
+from app.core.time import utcnow
+from app.models.base import Base, IntPK, TimestampMixin
+
+if TYPE_CHECKING:
+    from app.models.user import DeviceRegistration, User
 
 
 class TokenType(enum.StrEnum):
-    """Token type enumeration."""
-
     ACCESS = "access"
     REFRESH = "refresh"
     RESET_PASSWORD = "reset_password"
@@ -22,267 +27,203 @@ class TokenType(enum.StrEnum):
 
 
 class TokenStatus(enum.StrEnum):
-    """Token status enumeration."""
-
     ACTIVE = "active"
     REVOKED = "revoked"
     EXPIRED = "expired"
     USED = "used"
 
 
-class Token(Base):
-    """Token model for managing various authentication tokens."""
+class Token(TimestampMixin, Base):
+    """Generic token record (magic links, verification, named tokens...)."""
 
     __tablename__ = "tokens"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    id: Mapped[IntPK]
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
 
-    # Token details
-    token_hash = Column(String(255), nullable=False, unique=True, index=True)
-    token_type = Column(String(50), nullable=False)
-    status = Column(String(20), default="active")
+    token_hash: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    token_type: Mapped[str] = mapped_column(String(50))
+    status: Mapped[str] = mapped_column(String(20), default=TokenStatus.ACTIVE.value)
 
-    # Token metadata
-    name = Column(String(255), nullable=True)  # For API keys or named tokens
-    description = Column(Text, nullable=True)
-    scopes = Column(JSON, nullable=True)  # List of permitted scopes
+    name: Mapped[str | None] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(Text)
+    scopes: Mapped[list[str] | None]
 
-    # Expiration and usage
-    expires_at = Column(DateTime(timezone=True), nullable=True)
-    last_used_at = Column(DateTime(timezone=True), nullable=True)
-    usage_count = Column(Integer, default=0)
-    max_uses = Column(Integer, nullable=True)  # Null = unlimited
+    expires_at: Mapped[datetime | None]
+    last_used_at: Mapped[datetime | None]
+    usage_count: Mapped[int] = mapped_column(default=0)
+    max_uses: Mapped[int | None]  # None = unlimited
 
-    # IP and device restrictions
-    allowed_ips = Column(JSON, nullable=True)  # List of allowed IP addresses
-    device_fingerprint = Column(String(255), nullable=True)
-    user_agent = Column(Text, nullable=True)
+    allowed_ips: Mapped[list[str] | None]
+    device_fingerprint: Mapped[str | None] = mapped_column(String(255))
+    user_agent: Mapped[str | None] = mapped_column(Text)
 
-    # Revocation
-    revoked_at = Column(DateTime(timezone=True), nullable=True)
-    revoked_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    revocation_reason = Column(String(255), nullable=True)
+    revoked_at: Mapped[datetime | None]
+    revoked_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    revocation_reason: Mapped[str | None] = mapped_column(String(255))
 
-    # Timestamps
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    user: Mapped[User] = relationship(foreign_keys=[user_id])
+    revoked_by_user: Mapped[User | None] = relationship(foreign_keys=[revoked_by])
 
-    # Relationships
-    user = relationship("User", foreign_keys=[user_id])
-    revoked_by_user = relationship("User", foreign_keys=[revoked_by])
-
-    def __repr__(self):
-        return f"<Token(id={self.id}, user_id={self.user_id}, type='{self.token_type}', status='{self.status}')>"
+    def __repr__(self) -> str:
+        return (
+            f"<Token(id={self.id}, user_id={self.user_id}, "
+            f"type='{self.token_type}', status='{self.status}')>"
+        )
 
     @property
     def is_expired(self) -> bool:
-        """Check if token is expired."""
-        if self.expires_at is None:
-            return False
-        return datetime.utcnow() > self.expires_at
+        return self.expires_at is not None and utcnow() > self.expires_at
 
     @property
     def is_revoked(self) -> bool:
-        """Check if token is revoked."""
         return self.status == TokenStatus.REVOKED
 
     @property
     def is_valid(self) -> bool:
-        """Check if token is valid (not expired, not revoked, usage limits)."""
         if self.is_expired or self.is_revoked:
             return False
-
         return not (self.max_uses and self.usage_count >= self.max_uses)
 
     def revoke(self, revoked_by_user_id: int | None = None, reason: str | None = None) -> None:
-        """Revoke the token."""
-        self.status = TokenStatus.REVOKED
-        self.revoked_at = datetime.utcnow()
+        self.status = TokenStatus.REVOKED.value
+        self.revoked_at = utcnow()
         self.revoked_by = revoked_by_user_id
         self.revocation_reason = reason
 
     def increment_usage(self) -> None:
-        """Increment usage count and update last used timestamp."""
         self.usage_count += 1
-        self.last_used_at = datetime.utcnow()
-
-        # Auto-revoke if max uses reached
+        self.last_used_at = utcnow()
         if self.max_uses and self.usage_count >= self.max_uses:
-            self.status = TokenStatus.USED
+            self.status = TokenStatus.USED.value
 
     def can_be_used_from_ip(self, ip_address: str) -> bool:
-        """Check if token can be used from given IP address."""
-        if not self.allowed_ips:
-            return True  # No IP restrictions
-
-        return ip_address in self.allowed_ips
+        return not self.allowed_ips or ip_address in self.allowed_ips
 
     def has_scope(self, required_scope: str) -> bool:
-        """Check if token has required scope."""
-        if not self.scopes:
-            return True  # No scope restrictions
-
-        return required_scope in self.scopes
+        return not self.scopes or required_scope in self.scopes
 
 
-class RefreshToken(Base):
-    """Dedicated model for refresh tokens with additional tracking."""
+class RefreshToken(TimestampMixin, Base):
+    """Refresh token with rotation lineage (``token_family`` / ``parent_token``)."""
 
     __tablename__ = "refresh_tokens"
+    __table_args__ = (Index("ix_refresh_tokens_user_active", "user_id", "is_revoked"),)
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    id: Mapped[IntPK]
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
 
-    # Token details
-    token_hash = Column(String(255), nullable=False, unique=True, index=True)
-    jti = Column(String(255), nullable=False, unique=True)  # JWT ID
+    token_hash: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    jti: Mapped[str] = mapped_column(String(255), unique=True)
 
-    # Device and session info
-    device_id = Column(Integer, ForeignKey("device_registrations.id"), nullable=True)
-    session_id = Column(String(255), nullable=True)
-    ip_address = Column(String(45), nullable=True)
-    user_agent = Column(Text, nullable=True)
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("device_registrations.id"))
+    session_id: Mapped[str | None] = mapped_column(String(255))
+    ip_address: Mapped[str | None] = mapped_column(String(45))
+    user_agent: Mapped[str | None] = mapped_column(Text)
 
-    # Token lifecycle
-    issued_at = Column(DateTime(timezone=True), nullable=False)
-    expires_at = Column(DateTime(timezone=True), nullable=False)
-    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    issued_at: Mapped[datetime]
+    expires_at: Mapped[datetime]
+    last_used_at: Mapped[datetime | None]
 
-    # Status
-    is_revoked = Column(Boolean, default=False)
-    revoked_at = Column(DateTime(timezone=True), nullable=True)
-    revoked_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    is_revoked: Mapped[bool] = mapped_column(default=False)
+    revoked_at: Mapped[datetime | None]
+    revoked_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
-    # Token family for rotation
-    token_family = Column(String(255), nullable=True, index=True)
-    parent_token_id = Column(Integer, ForeignKey("refresh_tokens.id"), nullable=True)
+    token_family: Mapped[str | None] = mapped_column(String(255), index=True)
+    parent_token_id: Mapped[int | None] = mapped_column(ForeignKey("refresh_tokens.id"))
 
-    # Timestamps
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    user: Mapped[User] = relationship(foreign_keys=[user_id])
+    device: Mapped[DeviceRegistration | None] = relationship()
+    revoked_by_user: Mapped[User | None] = relationship(foreign_keys=[revoked_by])
+    parent_token: Mapped[RefreshToken | None] = relationship(
+        remote_side="RefreshToken.id", back_populates="child_tokens"
+    )
+    child_tokens: Mapped[list[RefreshToken]] = relationship(back_populates="parent_token")
 
-    # Relationships
-    user = relationship("User", foreign_keys=[user_id])
-    device = relationship("DeviceRegistration")
-    revoked_by_user = relationship("User", foreign_keys=[revoked_by])
-    parent_token = relationship("RefreshToken", remote_side=[id], back_populates="child_tokens")
-    child_tokens = relationship("RefreshToken", back_populates="parent_token")
-
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<RefreshToken(id={self.id}, user_id={self.user_id}, jti='{self.jti}')>"
 
     @property
     def is_expired(self) -> bool:
-        """Check if refresh token is expired."""
-        return datetime.utcnow() > self.expires_at
+        return utcnow() > self.expires_at
 
     @property
     def is_valid(self) -> bool:
-        """Check if refresh token is valid."""
         return not self.is_revoked and not self.is_expired
 
     def revoke(self, revoked_by_user_id: int | None = None) -> None:
-        """Revoke the refresh token."""
         self.is_revoked = True
-        self.revoked_at = datetime.utcnow()
+        self.revoked_at = utcnow()
         self.revoked_by = revoked_by_user_id
 
-    def revoke_family(self) -> None:
-        """Revoke entire token family (for security breach detection)."""
-        # This would revoke all tokens in the same family
 
-
-class APIKey(Base):
-    """Model for API keys with advanced management features."""
+class APIKey(TimestampMixin, Base):
+    """API key with scopes, allow-lists and rolling usage counters."""
 
     __tablename__ = "api_keys"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    id: Mapped[IntPK]
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
 
-    # Key details
-    key_hash = Column(String(255), nullable=False, unique=True, index=True)
-    key_prefix = Column(String(10), nullable=False)  # First few chars for identification
-    name = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
+    key_hash: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    key_prefix: Mapped[str] = mapped_column(String(10))
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(Text)
 
-    # Permissions and scopes
-    scopes = Column(JSON, nullable=False)  # List of allowed scopes
-    rate_limit_per_hour = Column(Integer, default=1000)
-    rate_limit_per_day = Column(Integer, default=10000)
+    scopes: Mapped[list[str]]
+    rate_limit_per_hour: Mapped[int] = mapped_column(default=1000)
+    rate_limit_per_day: Mapped[int] = mapped_column(default=10000)
 
-    # Usage tracking
-    last_used_at = Column(DateTime(timezone=True), nullable=True)
-    usage_count = Column(Integer, default=0)
-    daily_usage_count = Column(Integer, default=0)
-    hourly_usage_count = Column(Integer, default=0)
-    last_usage_reset = Column(DateTime(timezone=True), server_default=func.now())
+    last_used_at: Mapped[datetime | None]
+    usage_count: Mapped[int] = mapped_column(default=0)
+    daily_usage_count: Mapped[int] = mapped_column(default=0)
+    hourly_usage_count: Mapped[int] = mapped_column(default=0)
+    last_usage_reset: Mapped[datetime | None] = mapped_column(server_default=func.now())
 
-    # Restrictions
-    allowed_ips = Column(JSON, nullable=True)  # List of allowed IPs
-    allowed_domains = Column(JSON, nullable=True)  # List of allowed domains
+    allowed_ips: Mapped[list[str] | None]
+    allowed_domains: Mapped[list[str] | None]
 
-    # Status and expiration
-    is_active = Column(Boolean, default=True)
-    expires_at = Column(DateTime(timezone=True), nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    expires_at: Mapped[datetime | None]
 
-    # Timestamps
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    user: Mapped[User] = relationship()
+    usage_logs: Mapped[list[APIKeyUsageLog]] = relationship(back_populates="api_key")
 
-    # Relationships
-    user = relationship("User")
-    usage_logs = relationship("APIKeyUsageLog", back_populates="api_key")
-
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<APIKey(id={self.id}, name='{self.name}', user_id={self.user_id})>"
 
     @property
     def is_expired(self) -> bool:
-        """Check if API key is expired."""
-        if self.expires_at is None:
-            return False
-        return datetime.utcnow() > self.expires_at
+        return self.expires_at is not None and utcnow() > self.expires_at
 
     @property
     def is_valid(self) -> bool:
-        """Check if API key is valid."""
         return self.is_active and not self.is_expired
 
     def can_make_request(self, ip_address: str | None = None, domain: str | None = None) -> bool:
-        """Check if API key can make request from given IP/domain."""
         if not self.is_valid:
             return False
-
-        # Check IP restrictions
         if self.allowed_ips and ip_address and ip_address not in self.allowed_ips:
             return False
-
-        # Check domain restrictions
         if self.allowed_domains and domain and domain not in self.allowed_domains:
             return False
-
-        # Check rate limits
         if self.hourly_usage_count >= self.rate_limit_per_hour:
             return False
-
-        return not self.daily_usage_count >= self.rate_limit_per_day
+        return self.daily_usage_count < self.rate_limit_per_day
 
     def increment_usage(self) -> None:
-        """Increment usage counters."""
-        now = datetime.utcnow()
-
-        # Reset counters if needed
+        """Bump counters, rolling the hourly/daily windows when they lapse."""
+        now = utcnow()
         if self.last_usage_reset:
-            if (now - self.last_usage_reset).seconds >= 3600:  # 1 hour
+            elapsed = now - self.last_usage_reset
+            if elapsed >= timedelta(hours=1):
                 self.hourly_usage_count = 0
-
-            if (now - self.last_usage_reset).days >= 1:  # 1 day
+            if elapsed >= timedelta(days=1):
                 self.daily_usage_count = 0
                 self.last_usage_reset = now
+        else:
+            self.last_usage_reset = now
 
-        # Increment counters
         self.usage_count += 1
         self.hourly_usage_count += 1
         self.daily_usage_count += 1
@@ -290,32 +231,31 @@ class APIKey(Base):
 
 
 class APIKeyUsageLog(Base):
-    """Log API key usage for analytics and monitoring."""
+    """Per-request audit log for API keys."""
 
     __tablename__ = "api_key_usage_logs"
+    __table_args__ = (Index("ix_api_key_usage_logs_key_created", "api_key_id", "created_at"),)
 
-    id = Column(Integer, primary_key=True, index=True)
-    api_key_id = Column(Integer, ForeignKey("api_keys.id"), nullable=False)
+    id: Mapped[IntPK]
+    api_key_id: Mapped[int] = mapped_column(ForeignKey("api_keys.id"))
 
-    # Request details
-    endpoint = Column(String(255), nullable=False)
-    method = Column(String(10), nullable=False)
-    status_code = Column(Integer, nullable=False)
-    response_time_ms = Column(Integer, nullable=True)
+    endpoint: Mapped[str] = mapped_column(String(255))
+    method: Mapped[str] = mapped_column(String(10))
+    status_code: Mapped[int]
+    response_time_ms: Mapped[int | None]
 
-    # Request metadata
-    ip_address = Column(String(45), nullable=True)
-    user_agent = Column(Text, nullable=True)
-    referer = Column(String(500), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(45))
+    user_agent: Mapped[str | None] = mapped_column(Text)
+    referer: Mapped[str | None] = mapped_column(String(500))
 
-    # Error tracking
-    error_message = Column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text)
 
-    # Timestamp
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 
-    # Relationships
-    api_key = relationship("APIKey", back_populates="usage_logs")
+    api_key: Mapped[APIKey] = relationship(back_populates="usage_logs")
 
-    def __repr__(self):
-        return f"<APIKeyUsageLog(id={self.id}, api_key_id={self.api_key_id}, endpoint='{self.endpoint}')>"
+    def __repr__(self) -> str:
+        return (
+            f"<APIKeyUsageLog(id={self.id}, api_key_id={self.api_key_id}, "
+            f"endpoint='{self.endpoint}')>"
+        )

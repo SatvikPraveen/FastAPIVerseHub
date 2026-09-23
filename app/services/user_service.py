@@ -1,12 +1,13 @@
 # File: app/services/user_service.py
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import security_manager
+from app.core.time import utcnow
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
 
@@ -58,7 +59,7 @@ class UserService:
         for field, value in update_data.items():
             setattr(user, field, value)
 
-        user.updated_at = datetime.utcnow()
+        user.updated_at = utcnow()
 
         await self.db.commit()
         await self.db.refresh(user)
@@ -67,11 +68,7 @@ class UserService:
 
     async def delete_user(self, user_id: int) -> bool:
         """Soft delete a user."""
-        query = (
-            update(User)
-            .where(User.id == user_id)
-            .values(deleted_at=datetime.utcnow(), is_active=False)
-        )
+        query = update(User).where(User.id == user_id).values(deleted_at=utcnow(), is_active=False)
         result = await self.db.execute(query)
         await self.db.commit()
 
@@ -126,11 +123,7 @@ class UserService:
 
     async def activate_user(self, user_id: int) -> bool:
         """Activate a user account."""
-        query = (
-            update(User)
-            .where(User.id == user_id)
-            .values(is_active=True, updated_at=datetime.utcnow())
-        )
+        query = update(User).where(User.id == user_id).values(is_active=True, updated_at=utcnow())
         result = await self.db.execute(query)
         await self.db.commit()
 
@@ -138,11 +131,7 @@ class UserService:
 
     async def deactivate_user(self, user_id: int) -> bool:
         """Deactivate a user account."""
-        query = (
-            update(User)
-            .where(User.id == user_id)
-            .values(is_active=False, updated_at=datetime.utcnow())
-        )
+        query = update(User).where(User.id == user_id).values(is_active=False, updated_at=utcnow())
         result = await self.db.execute(query)
         await self.db.commit()
 
@@ -157,7 +146,7 @@ class UserService:
         if not user:
             return {}
 
-        account_age_days = (datetime.utcnow() - user.created_at).days
+        account_age_days = (utcnow() - user.created_at).days
 
         # Total enrollments
         total_q = select(func.count(Enrollment.id)).where(Enrollment.user_id == user_id)
@@ -227,7 +216,7 @@ class UserService:
 
     async def update_user_activity(self, user_id: int) -> None:
         """Update user's last activity timestamp."""
-        query = update(User).where(User.id == user_id).values(last_activity_at=datetime.utcnow())
+        query = update(User).where(User.id == user_id).values(last_activity_at=utcnow())
         await self.db.execute(query)
         await self.db.commit()
 
@@ -242,7 +231,7 @@ class UserService:
             if hasattr(user, key):
                 setattr(user, key, value)
 
-        user.updated_at = datetime.utcnow()
+        user.updated_at = utcnow()
 
         await self.db.commit()
         await self.db.refresh(user)
@@ -277,7 +266,7 @@ class UserService:
 
     async def get_recently_active_users(self, days: int = 7) -> list[User]:
         """Get users who were active in the last N days."""
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = utcnow() - timedelta(days=days)
 
         query = (
             select(User)

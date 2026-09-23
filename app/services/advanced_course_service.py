@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time import utcnow
 from app.models.course import Course, Enrollment, EnrollmentStatus
 from app.models.user import User
 
@@ -23,7 +24,7 @@ class LearningPath:
     difficulty: str
     completion_rate: float = 0.0
     user_progress: dict[str, float] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utcnow)
 
 
 class AdvancedCourseService:
@@ -159,7 +160,7 @@ class AdvancedCourseService:
         self, course_id: int, report: dict[str, Any]
     ) -> dict[str, Any]:
         """Persist an AI-generated optimization report (stub)."""
-        return {"course_id": course_id, "report": report, "saved_at": datetime.utcnow().isoformat()}
+        return {"course_id": course_id, "report": report, "saved_at": utcnow().isoformat()}
 
     async def apply_optimization_suggestions(
         self, course_id: int, suggestions: list[dict[str, Any]]

@@ -14,6 +14,7 @@ from fastapi import HTTPException, UploadFile, status
 from PIL import Image
 
 from app.core.config import settings
+from app.core.time import from_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -128,8 +129,8 @@ class FileManager:
         stat = path.stat()
         return {
             "size": stat.st_size,
-            "created": datetime.fromtimestamp(stat.st_ctime),
-            "modified": datetime.fromtimestamp(stat.st_mtime),
+            "created": from_timestamp(stat.st_ctime),
+            "modified": from_timestamp(stat.st_mtime),
             "mime_type": mimetypes.guess_type(str(path))[0],
             "extension": path.suffix.lower().lstrip("."),
         }

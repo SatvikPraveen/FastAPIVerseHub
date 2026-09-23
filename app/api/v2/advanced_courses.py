@@ -1,6 +1,5 @@
 # File: app/api/v2/advanced_courses.py
 
-from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
@@ -13,6 +12,7 @@ from app.core.dependencies import (
     get_db,
     get_pagination_params,
 )
+from app.core.time import utcnow
 from app.models.user import User
 from app.schemas.course import CourseAnalytics
 from app.services.advanced_course_service import AdvancedCourseService
@@ -77,7 +77,7 @@ async def get_course_recommendations(
             "interests": user_data.get("interests", []),
             "completed_courses": user_data.get("completed_courses", 0),
         },
-        "generated_at": datetime.utcnow(),
+        "generated_at": utcnow(),
     }
 
 
@@ -395,7 +395,7 @@ async def get_experiment_results(
     return {
         "experiment_id": experiment_id,
         "status": experiment.status,
-        "duration_days": (datetime.utcnow() - experiment.start_date).days,
+        "duration_days": (utcnow() - experiment.start_date).days,
         "statistical_significance": results["statistical_significance"],
         "winning_variant": results["winning_variant"],
         "confidence_level": results["confidence_level"],

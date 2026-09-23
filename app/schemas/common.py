@@ -5,6 +5,8 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.time import utcnow
+
 T = TypeVar("T")
 
 
@@ -29,7 +31,7 @@ class SuccessResponse(BaseModel):
     success: bool = True
     message: str
     data: dict[str, Any] | None = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utcnow)
 
 
 class ErrorResponse(BaseModel):
@@ -39,14 +41,14 @@ class ErrorResponse(BaseModel):
     error_code: str
     message: str
     details: dict[str, Any] | None = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utcnow)
 
 
 class HealthCheck(BaseModel):
     """Health check response schema."""
 
     status: str = "healthy"
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utcnow)
     version: str
     environment: str
     database: str = "connected"
@@ -58,7 +60,7 @@ class MetaData(BaseModel):
     """Metadata for API responses."""
 
     api_version: str = "1.0"
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utcnow)
     request_id: str | None = None
     execution_time_ms: float | None = None
 
@@ -160,7 +162,7 @@ class FileUploadResponse(BaseModel):
     file_path: str | None = None
     download_url: str | None = None
     upload_url: str | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class Analytics(BaseModel):
@@ -171,7 +173,7 @@ class Analytics(BaseModel):
     period_comparison: dict[str, Any] | None = None
     metrics: dict[str, Any] = {}
     charts_data: list[dict[str, Any]] | None = None
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class Notification(BaseModel):
@@ -183,7 +185,7 @@ class Notification(BaseModel):
     type: str = Field("info", pattern="^(info|success|warning|error)$")
     read: bool = False
     data: dict[str, Any] | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class ActivityLog(BaseModel):
@@ -198,7 +200,7 @@ class ActivityLog(BaseModel):
     metadata: dict[str, Any] | None = None
     ip_address: str | None = None
     user_agent: str | None = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utcnow)
 
 
 class CacheInfo(BaseModel):
@@ -239,7 +241,7 @@ class SystemStatus(BaseModel):
     component: str
     status: str = Field("operational", pattern="^(operational|degraded|down|maintenance)$")
     message: str | None = None
-    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    last_updated: datetime = Field(default_factory=utcnow)
     uptime_percentage: float | None = None
 
 

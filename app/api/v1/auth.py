@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_db, get_redis
 from app.core.security import security_manager
+from app.core.time import utcnow
 from app.models.user import User
 from app.schemas.auth import (
     ChangePasswordRequest,
@@ -145,9 +146,7 @@ async def logout(
         jti = payload.get("jti")
         exp = payload.get("exp")
         if jti and exp:
-            from datetime import datetime
-
-            ttl = int(exp - datetime.utcnow().timestamp())
+            ttl = int(exp - utcnow().timestamp())
             if ttl > 0:
                 await redis_client.setex(f"blacklist:jti:{jti}", ttl, "1")
     except Exception:

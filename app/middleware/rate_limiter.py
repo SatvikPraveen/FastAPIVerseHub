@@ -2,7 +2,6 @@
 
 import logging
 from collections.abc import Callable
-from datetime import datetime
 
 from fastapi import Request, Response
 from redis.exceptions import RedisError
@@ -11,6 +10,7 @@ from starlette.responses import JSONResponse
 
 from app.common.cache_utils import RateLimitCache, cache_manager
 from app.core.config import settings
+from app.core.time import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def _check_rate_limits(self, client_id: str, request: Request) -> dict:
         """Check multiple rate limit windows."""
-        datetime.utcnow()
+        utcnow()
 
         # Define rate limit windows
         limits = [
@@ -178,7 +178,7 @@ class AdaptiveRateLimiter:
     def __init__(self):
         self.base_limit = settings.RATE_LIMIT_PER_MINUTE
         self.load_factor = 1.0
-        self.last_adjustment = datetime.utcnow()
+        self.last_adjustment = utcnow()
 
     async def get_current_limit(self, client_type: str = "default") -> int:
         """Get current rate limit based on system load."""
@@ -196,7 +196,7 @@ class AdaptiveRateLimiter:
 
     async def _adjust_for_load(self):
         """Adjust rate limits based on system load."""
-        now = datetime.utcnow()
+        now = utcnow()
 
         # Only adjust every minute
         if (now - self.last_adjustment).seconds < 60:

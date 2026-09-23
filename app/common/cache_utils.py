@@ -1,13 +1,14 @@
 # File: app/common/cache_utils.py
 
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 from functools import wraps
 from typing import Any
 
 import redis.asyncio as redis
 
 from app.core.config import settings
+from app.core.time import utcnow
 
 
 class CacheManager:
@@ -237,7 +238,7 @@ class RateLimitCache:
         self, key: str, limit: int, window_seconds: int
     ) -> tuple[bool, dict[str, Any]]:
         """Check if key is rate limited."""
-        current_time = datetime.utcnow()
+        current_time = utcnow()
         current_time - timedelta(seconds=window_seconds)
 
         # Use sliding window counter
@@ -284,8 +285,8 @@ class SessionCache:
         session_key = f"session:{session_id}"
         session_data = {
             "user_id": user_id,
-            "created_at": datetime.utcnow().isoformat(),
-            "last_activity": datetime.utcnow().isoformat(),
+            "created_at": utcnow().isoformat(),
+            "last_activity": utcnow().isoformat(),
             **data,
         }
 
@@ -303,7 +304,7 @@ class SessionCache:
             return False
 
         session_data.update(data)
-        session_data["last_activity"] = datetime.utcnow().isoformat()
+        session_data["last_activity"] = utcnow().isoformat()
 
         session_key = f"session:{session_id}"
         return await self.cache.set(session_key, session_data, ttl=self.session_ttl)

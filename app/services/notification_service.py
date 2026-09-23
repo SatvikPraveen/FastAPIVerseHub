@@ -3,10 +3,11 @@
 import json
 import logging
 from collections import defaultdict
-from datetime import datetime
 from typing import Any
 
 from fastapi import WebSocket
+
+from app.core.time import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +144,7 @@ class SSEManager:
         self.user_clients: dict[int, set[str]] = defaultdict(set)
         self.channel_subscribers: dict[str, set[str]] = defaultdict(set)
         self.message_queues: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        self.stats = {"total_messages_sent": 0, "start_time": datetime.utcnow()}
+        self.stats = {"total_messages_sent": 0, "start_time": utcnow()}
 
     async def subscribe_to_channel(self, client_id: str, channel: str, user_id: int | None = None):
         """Subscribe client to SSE channel."""
@@ -153,8 +154,8 @@ class SSEManager:
             self.clients[client_id] = {
                 "user_id": user_id,
                 "channels": set(),
-                "created_at": datetime.utcnow(),
-                "last_activity": datetime.utcnow(),
+                "created_at": utcnow(),
+                "last_activity": utcnow(),
             }
 
         self.clients[client_id]["channels"].add(channel)
@@ -196,7 +197,7 @@ class SSEManager:
         self.message_queues[client_id] = []  # Clear after retrieval
 
         if client_id in self.clients:
-            self.clients[client_id]["last_activity"] = datetime.utcnow()
+            self.clients[client_id]["last_activity"] = utcnow()
 
         return messages
 
@@ -226,7 +227,7 @@ class SSEManager:
 
     async def get_stats(self) -> dict[str, Any]:
         """Get SSE statistics."""
-        uptime = (datetime.utcnow() - self.stats["start_time"]).total_seconds()
+        uptime = (utcnow() - self.stats["start_time"]).total_seconds()
 
         return {
             "total_clients": len(self.clients),
@@ -248,7 +249,7 @@ class SSEManager:
                     {
                         "name": channel,
                         "subscriber_count": len(subscribers),
-                        "last_message_at": datetime.utcnow(),  # Placeholder
+                        "last_message_at": utcnow(),  # Placeholder
                     }
                 )
 
@@ -298,7 +299,7 @@ class NotificationService:
             "type": "announcement",
             "title": title,
             "message": message,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utcnow().isoformat(),
             "priority": "normal",
         }
 
@@ -317,7 +318,7 @@ class NotificationService:
             "course_id": course_id,
             "update_type": update_type,
             "message": message,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utcnow().isoformat(),
         }
 
         for user_id in enrolled_users:
@@ -329,7 +330,7 @@ class NotificationService:
             "type": "achievement",
             "title": "Achievement Unlocked!",
             "achievement": achievement,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utcnow().isoformat(),
         }
 
         await self.send_notification(user_id, notification, ["achievements"])

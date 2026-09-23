@@ -1,19 +1,24 @@
 # File: app/models/course.py
+"""Course catalogue models: courses, lessons, enrollments, reviews, progress."""
 
+from __future__ import annotations
 
 import enum
+from datetime import datetime
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
+from sqlalchemy import ForeignKey, Index, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base
+from app.models.base import Base, IntPK, TimestampMixin
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class DifficultyLevel(enum.StrEnum):
-    """Course difficulty levels."""
-
     BEGINNER = "beginner"
     INTERMEDIATE = "intermediate"
     ADVANCED = "advanced"
@@ -21,8 +26,6 @@ class DifficultyLevel(enum.StrEnum):
 
 
 class CourseStatus(enum.StrEnum):
-    """Course status options."""
-
     DRAFT = "draft"
     PUBLISHED = "published"
     ARCHIVED = "archived"
@@ -30,145 +33,143 @@ class CourseStatus(enum.StrEnum):
 
 
 class EnrollmentStatus(enum.StrEnum):
-    """Enrollment status options."""
-
     ACTIVE = "active"
     COMPLETED = "completed"
     DROPPED = "dropped"
     SUSPENDED = "suspended"
 
 
-class Course(Base):
+def _enum_column(enum_cls: type[enum.StrEnum], name: str) -> SQLEnum:
+    """Store the enum *values* (``"beginner"``) rather than member names.
+
+    This keeps the database representation identical to the API contract and
+    lets callers pass either the enum member or its string value.
+    """
+    return SQLEnum(
+        enum_cls,
+        name=name,
+        values_callable=lambda e: [m.value for m in e],
+        validate_strings=True,
+    )
+
+
+class Course(TimestampMixin, Base):
     """Course model for learning resources."""
 
     __tablename__ = "courses"
+    __table_args__ = (Index("ix_courses_published_category", "is_published", "category"),)
 
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String(255), nullable=False, index=True)
-    slug = Column(String(255), unique=True, nullable=False, index=True)
-    description = Column(Text, nullable=True)
-    short_description = Column(String(500), nullable=True)
+    id: Mapped[IntPK]
+    title: Mapped[str] = mapped_column(String(255), index=True)
+    slug: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    short_description: Mapped[str | None] = mapped_column(String(500))
 
     # Course metadata
-    instructor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    category = Column(String(100), nullable=False, index=True)
-    subcategory = Column(String(100), nullable=True)
-    tags = Column(JSON, nullable=True)  # List of tags
+    instructor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    category: Mapped[str] = mapped_column(String(100), index=True)
+    subcategory: Mapped[str | None] = mapped_column(String(100))
+    tags: Mapped[list[str] | None]
 
     # Course details
-    difficulty = Column(SQLEnum(DifficultyLevel), default=DifficultyLevel.BEGINNER)
-    estimated_duration_hours = Column(Integer, nullable=True)
-    language = Column(String(10), default="en")
+    difficulty: Mapped[DifficultyLevel] = mapped_column(
+        _enum_column(DifficultyLevel, "difficulty_level"), default=DifficultyLevel.BEGINNER
+    )
+    estimated_duration_hours: Mapped[int | None]
+    language: Mapped[str] = mapped_column(String(10), default="en")
 
     # Content
-    thumbnail_url = Column(String(500), nullable=True)
-    preview_video_url = Column(String(500), nullable=True)
-    course_outline = Column(JSON, nullable=True)  # Structured course content
-    learning_objectives = Column(JSON, nullable=True)  # List of objectives
-    prerequisites = Column(JSON, nullable=True)  # List of prerequisites
+    thumbnail_url: Mapped[str | None] = mapped_column(String(500))
+    preview_video_url: Mapped[str | None] = mapped_column(String(500))
+    course_outline: Mapped[dict[str, Any] | None]
+    learning_objectives: Mapped[list[str] | None]
+    prerequisites: Mapped[list[str] | None]
 
     # Pricing
-    price = Column(Numeric(10, 2), default=0.00)
-    original_price = Column(Numeric(10, 2), nullable=True)
-    currency = Column(String(3), default="USD")
-    is_free = Column(Boolean, default=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
+    original_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    currency: Mapped[str] = mapped_column(String(3), default="USD")
+    is_free: Mapped[bool] = mapped_column(default=False)
 
     # Status and visibility
-    status = Column(SQLEnum(CourseStatus), default=CourseStatus.DRAFT)
-    is_published = Column(Boolean, default=False)
-    is_featured = Column(Boolean, default=False)
+    status: Mapped[CourseStatus] = mapped_column(
+        _enum_column(CourseStatus, "course_status"), default=CourseStatus.DRAFT
+    )
+    is_published: Mapped[bool] = mapped_column(default=False)
+    is_featured: Mapped[bool] = mapped_column(default=False)
 
-    # Analytics and ratings
-    total_enrollments = Column(Integer, default=0)
-    active_enrollments = Column(Integer, default=0)
-    completion_rate = Column(Numeric(5, 2), default=0.00)  # Percentage
-    average_rating = Column(Numeric(3, 2), default=0.00)
-    total_reviews = Column(Integer, default=0)
+    # Analytics and ratings (denormalised counters)
+    total_enrollments: Mapped[int] = mapped_column(default=0)
+    active_enrollments: Mapped[int] = mapped_column(default=0)
+    completion_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.00"))
+    average_rating: Mapped[Decimal] = mapped_column(Numeric(3, 2), default=Decimal("0.00"))
+    total_reviews: Mapped[int] = mapped_column(default=0)
 
     # SEO
-    meta_title = Column(String(255), nullable=True)
-    meta_description = Column(Text, nullable=True)
-    meta_keywords = Column(String(500), nullable=True)
+    meta_title: Mapped[str | None] = mapped_column(String(255))
+    meta_description: Mapped[str | None] = mapped_column(Text)
+    meta_keywords: Mapped[str | None] = mapped_column(String(500))
 
-    # Timestamps
-    published_at = Column(DateTime(timezone=True), nullable=True)
-    last_updated_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    # Lifecycle timestamps
+    published_at: Mapped[datetime | None]
+    last_updated_at: Mapped[datetime | None]
 
     # Relationships
-    instructor = relationship("User", back_populates="courses")
-    enrollments = relationship("Enrollment", back_populates="course")
-    reviews = relationship("CourseReview", back_populates="course")
-    lessons = relationship("Lesson", back_populates="course")
+    instructor: Mapped[User] = relationship(back_populates="courses")
+    enrollments: Mapped[list[Enrollment]] = relationship(back_populates="course")
+    reviews: Mapped[list[CourseReview]] = relationship(back_populates="course")
+    lessons: Mapped[list[Lesson]] = relationship(back_populates="course", order_by="Lesson.order")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Course(id={self.id}, title='{self.title}', instructor_id={self.instructor_id})>"
 
     @property
     def is_discounted(self) -> bool:
-        """Check if course has a discount."""
-        return self.original_price and self.price < self.original_price
+        return self.original_price is not None and self.price < self.original_price
 
     @property
     def discount_percentage(self) -> int:
-        """Calculate discount percentage."""
-        if not self.is_discounted:
+        if not self.is_discounted or not self.original_price:
             return 0
         return int((1 - (self.price / self.original_price)) * 100)
 
     def get_display_price(self) -> str:
-        """Get formatted price for display."""
-        if self.is_free:
-            return "Free"
-        return f"${self.price}"
+        return "Free" if self.is_free else f"${self.price}"
 
     def can_be_enrolled(self) -> bool:
-        """Check if course can be enrolled in."""
         return self.is_published and self.status == CourseStatus.PUBLISHED
 
-    def update_enrollment_stats(self) -> None:
-        """Update enrollment statistics."""
-        # This would be called when enrollment changes
 
-
-class Lesson(Base):
+class Lesson(TimestampMixin, Base):
     """Lesson model for course content."""
 
     __tablename__ = "lessons"
+    __table_args__ = (UniqueConstraint("course_id", "slug", name="uq_lessons_course_slug"),)
 
-    id = Column(Integer, primary_key=True, index=True)
-    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+    id: Mapped[IntPK]
+    course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), index=True)
 
-    title = Column(String(255), nullable=False)
-    slug = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    content = Column(Text, nullable=True)
+    title: Mapped[str] = mapped_column(String(255))
+    slug: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(Text)
+    content: Mapped[str | None] = mapped_column(Text)
 
-    # Lesson metadata
-    lesson_type = Column(String(50), default="video")  # video, text, quiz, assignment
-    order = Column(Integer, nullable=False, default=0)
-    duration_minutes = Column(Integer, nullable=True)
+    lesson_type: Mapped[str] = mapped_column(String(50), default="video")
+    order: Mapped[int] = mapped_column(default=0)
+    duration_minutes: Mapped[int | None]
 
-    # Content URLs
-    video_url = Column(String(500), nullable=True)
-    audio_url = Column(String(500), nullable=True)
-    transcript_url = Column(String(500), nullable=True)
-    attachments = Column(JSON, nullable=True)  # List of attachment URLs
+    video_url: Mapped[str | None] = mapped_column(String(500))
+    audio_url: Mapped[str | None] = mapped_column(String(500))
+    transcript_url: Mapped[str | None] = mapped_column(String(500))
+    attachments: Mapped[list[str] | None]
 
-    # Settings
-    is_free_preview = Column(Boolean, default=False)
-    is_published = Column(Boolean, default=False)
+    is_free_preview: Mapped[bool] = mapped_column(default=False)
+    is_published: Mapped[bool] = mapped_column(default=False)
 
-    # Timestamps
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    course: Mapped[Course] = relationship(back_populates="lessons")
+    user_progress: Mapped[list[UserLessonProgress]] = relationship(back_populates="lesson")
 
-    # Relationships
-    course = relationship("Course", back_populates="lessons")
-    user_progress = relationship("UserLessonProgress", back_populates="lesson")
-
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Lesson(id={self.id}, title='{self.title}', course_id={self.course_id})>"
 
 
@@ -176,120 +177,112 @@ class Enrollment(Base):
     """Enrollment model for user-course relationships."""
 
     __tablename__ = "enrollments"
+    __table_args__ = (UniqueConstraint("user_id", "course_id", name="uq_enrollments_user_course"),)
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+    id: Mapped[IntPK]
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), index=True)
 
-    # Enrollment details
-    status = Column(SQLEnum(EnrollmentStatus), default=EnrollmentStatus.ACTIVE)
-    progress_percentage = Column(Numeric(5, 2), default=0.00)
+    status: Mapped[EnrollmentStatus] = mapped_column(
+        _enum_column(EnrollmentStatus, "enrollment_status"), default=EnrollmentStatus.ACTIVE
+    )
+    progress_percentage: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.00"))
 
     # Payment info (if paid course)
-    payment_amount = Column(Numeric(10, 2), nullable=True)
-    payment_currency = Column(String(3), nullable=True)
-    payment_method = Column(String(50), nullable=True)
-    transaction_id = Column(String(255), nullable=True)
+    payment_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    payment_currency: Mapped[str | None] = mapped_column(String(3))
+    payment_method: Mapped[str | None] = mapped_column(String(50))
+    transaction_id: Mapped[str | None] = mapped_column(String(255))
 
     # Progress tracking
-    lessons_completed = Column(Integer, default=0)
-    total_lessons = Column(Integer, default=0)
-    total_time_spent_minutes = Column(Integer, default=0)
-    last_accessed_lesson_id = Column(Integer, nullable=True)
+    lessons_completed: Mapped[int] = mapped_column(default=0)
+    total_lessons: Mapped[int] = mapped_column(default=0)
+    total_time_spent_minutes: Mapped[int] = mapped_column(default=0)
+    last_accessed_lesson_id: Mapped[int | None]
 
     # Completion
-    completed_at = Column(DateTime(timezone=True), nullable=True)
-    certificate_issued_at = Column(DateTime(timezone=True), nullable=True)
-    certificate_url = Column(String(500), nullable=True)
+    completed_at: Mapped[datetime | None]
+    certificate_issued_at: Mapped[datetime | None]
+    certificate_url: Mapped[str | None] = mapped_column(String(500))
 
-    # Timestamps
-    enrolled_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    # Timestamps (``enrolled_at`` plays the role of ``created_at``)
+    enrolled_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(onupdate=func.now())
 
-    # Relationships
-    user = relationship("User", back_populates="enrollments")
-    course = relationship("Course", back_populates="enrollments")
+    user: Mapped[User] = relationship(back_populates="enrollments")
+    course: Mapped[Course] = relationship(back_populates="enrollments")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Enrollment(id={self.id}, user_id={self.user_id}, course_id={self.course_id})>"
 
     @property
     def is_completed(self) -> bool:
-        """Check if enrollment is completed."""
         return self.status == EnrollmentStatus.COMPLETED
 
     def calculate_progress(self) -> float:
-        """Calculate current progress percentage."""
         if self.total_lessons == 0:
             return 0.0
         return (self.lessons_completed / self.total_lessons) * 100
 
 
-class CourseReview(Base):
+class CourseReview(TimestampMixin, Base):
     """Course review and rating model."""
 
     __tablename__ = "course_reviews"
+    __table_args__ = (
+        UniqueConstraint("user_id", "course_id", name="uq_course_reviews_user_course"),
+    )
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+    id: Mapped[IntPK]
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), index=True)
 
-    # Review content
-    rating = Column(Integer, nullable=False)  # 1-5 stars
-    title = Column(String(255), nullable=True)
-    content = Column(Text, nullable=True)
+    rating: Mapped[int]  # 1-5 stars
+    title: Mapped[str | None] = mapped_column(String(255))
+    content: Mapped[str | None] = mapped_column(Text)
 
-    # Review metadata
-    is_verified_purchase = Column(Boolean, default=False)
-    is_public = Column(Boolean, default=True)
-    is_featured = Column(Boolean, default=False)
+    is_verified_purchase: Mapped[bool] = mapped_column(default=False)
+    is_public: Mapped[bool] = mapped_column(default=True)
+    is_featured: Mapped[bool] = mapped_column(default=False)
 
-    # Interaction
-    helpful_count = Column(Integer, default=0)
-    reported_count = Column(Integer, default=0)
+    helpful_count: Mapped[int] = mapped_column(default=0)
+    reported_count: Mapped[int] = mapped_column(default=0)
 
-    # Timestamps
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    user: Mapped[User] = relationship()
+    course: Mapped[Course] = relationship(back_populates="reviews")
 
-    # Relationships
-    user = relationship("User")
-    course = relationship("Course", back_populates="reviews")
-
-    def __repr__(self):
-        return f"<CourseReview(id={self.id}, user_id={self.user_id}, course_id={self.course_id}, rating={self.rating})>"
+    def __repr__(self) -> str:
+        return (
+            f"<CourseReview(id={self.id}, user_id={self.user_id}, "
+            f"course_id={self.course_id}, rating={self.rating})>"
+        )
 
 
-class UserLessonProgress(Base):
+class UserLessonProgress(TimestampMixin, Base):
     """Track user progress through individual lessons."""
 
     __tablename__ = "user_lesson_progress"
+    __table_args__ = (
+        UniqueConstraint("user_id", "lesson_id", name="uq_user_lesson_progress_user_lesson"),
+    )
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    lesson_id = Column(Integer, ForeignKey("lessons.id"), nullable=False)
+    id: Mapped[IntPK]
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    lesson_id: Mapped[int] = mapped_column(ForeignKey("lessons.id"), index=True)
 
-    # Progress tracking
-    is_completed = Column(Boolean, default=False)
-    progress_percentage = Column(Numeric(5, 2), default=0.00)
-    time_spent_minutes = Column(Integer, default=0)
+    is_completed: Mapped[bool] = mapped_column(default=False)
+    progress_percentage: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.00"))
+    time_spent_minutes: Mapped[int] = mapped_column(default=0)
 
-    # Video/Audio progress
-    last_position_seconds = Column(Integer, default=0)
-    total_duration_seconds = Column(Integer, nullable=True)
+    last_position_seconds: Mapped[int] = mapped_column(default=0)
+    total_duration_seconds: Mapped[int | None]
 
-    # Completion details
-    completed_at = Column(DateTime(timezone=True), nullable=True)
-    first_accessed_at = Column(DateTime(timezone=True), nullable=True)
-    last_accessed_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None]
+    first_accessed_at: Mapped[datetime | None]
+    last_accessed_at: Mapped[datetime | None]
 
-    # Timestamps
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    user: Mapped[User] = relationship()
+    lesson: Mapped[Lesson] = relationship(back_populates="user_progress")
 
-    # Relationships
-    user = relationship("User")
-    lesson = relationship("Lesson", back_populates="user_progress")
-
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<UserLessonProgress(id={self.id}, user_id={self.user_id}, lesson_id={self.lesson_id})>"

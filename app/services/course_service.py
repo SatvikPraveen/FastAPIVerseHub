@@ -1,11 +1,11 @@
 # File: app/services/course_service.py
 
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time import utcnow
 from app.models.course import Course, CourseReview, Enrollment
 from app.models.user import User
 from app.schemas.course import CourseCreate, CourseUpdate
@@ -74,8 +74,8 @@ class CourseService:
         for field, value in update_data.items():
             setattr(course, field, value)
 
-        course.updated_at = datetime.utcnow()
-        course.last_updated_at = datetime.utcnow()
+        course.updated_at = utcnow()
+        course.last_updated_at = utcnow()
 
         await self.db.commit()
         await self.db.refresh(course)
@@ -163,8 +163,8 @@ class CourseService:
 
         course.is_published = True
         course.status = "published"
-        course.published_at = datetime.utcnow()
-        course.updated_at = datetime.utcnow()
+        course.published_at = utcnow()
+        course.updated_at = utcnow()
 
         await self.db.commit()
         await self.db.refresh(course)
@@ -179,7 +179,7 @@ class CourseService:
 
         course.is_published = False
         course.status = "draft"
-        course.updated_at = datetime.utcnow()
+        course.updated_at = utcnow()
 
         await self.db.commit()
         await self.db.refresh(course)
@@ -189,7 +189,7 @@ class CourseService:
     async def enroll_user(self, course_id: int, user_id: int) -> Enrollment:
         """Enroll a user in a course."""
         enrollment = Enrollment(
-            user_id=user_id, course_id=course_id, status="active", enrolled_at=datetime.utcnow()
+            user_id=user_id, course_id=course_id, status="active", enrolled_at=utcnow()
         )
 
         self.db.add(enrollment)
@@ -341,5 +341,5 @@ class CourseService:
         slug = slug.strip("-")
 
         # Add timestamp to ensure uniqueness
-        timestamp = str(int(datetime.utcnow().timestamp()))[-4:]
+        timestamp = str(int(utcnow().timestamp()))[-4:]
         return f"{slug}-{timestamp}"

@@ -1,12 +1,13 @@
 # File: app/services/analytics_service.py
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time import utcnow
 from app.models.course import Course, CourseReview, Enrollment, EnrollmentStatus
 
 _TIME_RANGE_DAYS = {"7d": 7, "30d": 30, "90d": 90, "1y": 365}
@@ -25,7 +26,7 @@ class AnalyticsService:
     async def get_course_analytics(self, course_id: int, time_range: str = "30d") -> dict[str, Any]:
         """Return analytics data matching the CourseAnalytics schema."""
         days = _TIME_RANGE_DAYS.get(time_range, 30)
-        since = datetime.utcnow() - timedelta(days=days)
+        since = utcnow() - timedelta(days=days)
 
         # Total enrollments
         total_enroll_q = select(func.count(Enrollment.id)).where(Enrollment.course_id == course_id)
@@ -89,7 +90,7 @@ class AnalyticsService:
     ) -> dict[str, Any]:
         """Return aggregated dashboard metrics for an instructor."""
         days = _TIME_RANGE_DAYS.get(time_range, 30)
-        datetime.utcnow() - timedelta(days=days)
+        utcnow() - timedelta(days=days)
 
         # Courses owned
         courses_q = select(Course).where(Course.instructor_id == instructor_id)

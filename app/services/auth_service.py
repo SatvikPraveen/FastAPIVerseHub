@@ -1,6 +1,6 @@
 import json
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.email_utils import EmailService
 from app.core.security import security_manager
+from app.core.time import utcnow
 from app.models.user import DeviceRegistration, User, UserSession
 from app.schemas.auth import UserRegistration
 
@@ -76,8 +77,8 @@ class AuthService:
             update(User)
             .where(User.id == user_id)
             .values(
-                last_login_at=datetime.utcnow(),
-                last_activity_at=datetime.utcnow(),
+                last_login_at=utcnow(),
+                last_activity_at=utcnow(),
                 login_count=User.login_count + 1,
             )
         )
@@ -98,7 +99,7 @@ class AuthService:
             "user_id": user_id,
             "secret": secret,
             "backup_codes": backup_codes,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": utcnow().isoformat(),
         }
         if self.redis:
             await self.redis.setex(
@@ -168,7 +169,7 @@ class AuthService:
             device_fingerprint=device_fingerprint,
             device_token=device_token,
             is_trusted=False,
-            last_used_at=datetime.utcnow(),
+            last_used_at=utcnow(),
         )
 
         self.db.add(device)
@@ -310,8 +311,8 @@ class AuthService:
             ip_address=ip_address,
             user_agent=user_agent,
             is_active=True,
-            last_activity_at=datetime.utcnow(),
-            expires_at=datetime.utcnow() + timedelta(days=30),
+            last_activity_at=utcnow(),
+            expires_at=utcnow() + timedelta(days=30),
         )
 
         self.db.add(session)
@@ -329,7 +330,7 @@ class AuthService:
                 and_(
                     UserSession.user_id == user_id,
                     UserSession.is_active,
-                    UserSession.expires_at > datetime.utcnow(),
+                    UserSession.expires_at > utcnow(),
                 )
             )
             .order_by(UserSession.last_activity_at.desc())

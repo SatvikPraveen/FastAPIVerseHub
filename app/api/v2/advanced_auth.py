@@ -2,7 +2,7 @@
 
 import base64
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
 from io import BytesIO
 from typing import Any
 
@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user, get_db, get_redis
 from app.core.security import security_manager
+from app.core.time import utcnow
 from app.models.user import User
 from app.schemas.auth import TokenResponse
 from app.services.auth_service import AuthService
@@ -343,7 +344,7 @@ async def social_auth(
             "id": user.id,
             "email": user.email,
             "full_name": user.full_name,
-            "is_new_user": user.created_at > datetime.utcnow() - timedelta(minutes=1),
+            "is_new_user": user.created_at > utcnow() - timedelta(minutes=1),
         },
     }
 

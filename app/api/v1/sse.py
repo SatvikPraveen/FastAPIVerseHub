@@ -4,13 +4,13 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from app.core.dependencies import get_current_user_optional, get_db
+from app.core.time import utcnow
 from app.models.user import User
 from app.services.notification_service import SSEManager
 
@@ -33,7 +33,7 @@ async def event_stream(
     The loop exits as soon as the client disconnects so subscriptions are
     released promptly instead of lingering until the next write fails.
     """
-    client_id = f"sse_{user_id}_{datetime.utcnow().timestamp()}"
+    client_id = f"sse_{user_id}_{utcnow().timestamp()}"
 
     # Parse channels
     channel_list = []
@@ -53,10 +53,10 @@ async def event_stream(
         yield f"event: connected\ndata: {json.dumps({'message': 'Connected to SSE stream', 'client_id': client_id, 'channels': channel_list})}\n\n"
 
         # Send heartbeat every 30 seconds and check for messages
-        last_heartbeat = datetime.utcnow()
+        last_heartbeat = utcnow()
 
         while not await request.is_disconnected():
-            current_time = datetime.utcnow()
+            current_time = utcnow()
 
             # Check for new messages
             messages = await sse_manager.get_messages_for_client(client_id)
@@ -91,7 +91,7 @@ async def event_stream(
         error_data = {
             "type": "error",
             "message": "Stream error occurred",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utcnow().isoformat(),
         }
         yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
 
@@ -132,7 +132,7 @@ async def publish_to_channel(
 ) -> dict:
     """Publish message to SSE channel."""
     event_data = {
-        "id": f"msg_{datetime.utcnow().timestamp()}",
+        "id": f"msg_{utcnow().timestamp()}",
         "type": message.get("type", "message"),
         "channel": channel,
         "data": {
@@ -141,7 +141,7 @@ async def publish_to_channel(
             "user_id": current_user.id if current_user else None,
             "metadata": message.get("metadata", {}),
         },
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utcnow().isoformat(),
     }
 
     await sse_manager.publish_to_channel(channel, event_data)
@@ -158,7 +158,7 @@ async def notify_user_sse(
 ) -> dict:
     """Send notification to specific user via SSE."""
     event_data = {
-        "id": f"notif_{datetime.utcnow().timestamp()}",
+        "id": f"notif_{utcnow().timestamp()}",
         "type": "notification",
         "data": {
             "title": notification.get("title", "New Notification"),
@@ -168,7 +168,7 @@ async def notify_user_sse(
             "action_url": notification.get("action_url"),
             "metadata": notification.get("metadata", {}),
         },
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utcnow().isoformat(),
     }
 
     sent = await sse_manager.send_to_user(user_id, event_data)
@@ -190,7 +190,7 @@ async def broadcast_message(
 ) -> dict:
     """Broadcast message to multiple channels."""
     event_data = {
-        "id": f"broadcast_{datetime.utcnow().timestamp()}",
+        "id": f"broadcast_{utcnow().timestamp()}",
         "type": "broadcast",
         "data": {
             "title": message.get("title", "Broadcast Message"),
@@ -198,7 +198,7 @@ async def broadcast_message(
             "from_user_id": current_user.id if current_user else None,
             "metadata": message.get("metadata", {}),
         },
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utcnow().isoformat(),
     }
 
     channel_list = []
@@ -274,7 +274,7 @@ async def send_test_events(
 
     for i in range(count):
         event_data = {
-            "id": f"test_{datetime.utcnow().timestamp()}_{i}",
+            "id": f"test_{utcnow().timestamp()}_{i}",
             "type": "test",
             "data": {
                 "title": f"Test Event {i + 1}",
@@ -282,7 +282,7 @@ async def send_test_events(
                 "sequence": i + 1,
                 "total": count,
             },
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utcnow().isoformat(),
         }
 
         await sse_manager.publish_to_channel(channel, event_data)

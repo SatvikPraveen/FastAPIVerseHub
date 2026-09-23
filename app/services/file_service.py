@@ -1,11 +1,11 @@
 # File: app/services/file_service.py
 
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Integer, and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time import utcnow
 from app.models.user import FileUpload
 
 
@@ -86,7 +86,7 @@ class FileService:
         query = (
             update(FileUpload)
             .where(and_(FileUpload.id == file_id, FileUpload.user_id == user_id))
-            .values(is_deleted=True, deleted_at=datetime.utcnow())
+            .values(is_deleted=True, deleted_at=utcnow())
         )
         result = await self.db.execute(query)
         await self.db.commit()
@@ -112,7 +112,7 @@ class FileService:
         if is_public is not None:
             file_record.is_public = is_public
 
-        file_record.updated_at = datetime.utcnow()
+        file_record.updated_at = utcnow()
         await self.db.commit()
         await self.db.refresh(file_record)
         return file_record
@@ -138,7 +138,7 @@ class FileService:
             file_record.category = category
         if is_public is not None:
             file_record.is_public = is_public
-        file_record.updated_at = datetime.utcnow()
+        file_record.updated_at = utcnow()
         await self.db.commit()
         await self.db.refresh(file_record)
         return file_record
