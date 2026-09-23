@@ -39,6 +39,13 @@ class EnrollmentStatus(enum.StrEnum):
     SUSPENDED = "suspended"
 
 
+class ExperimentStatus(enum.StrEnum):
+    DRAFT = "draft"
+    RUNNING = "running"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+
+
 def _enum_column(enum_cls: type[enum.StrEnum], name: str) -> SQLEnum:
     """Store the enum *values* (``"beginner"``) rather than member names.
 
@@ -286,3 +293,37 @@ class UserLessonProgress(TimestampMixin, Base):
 
     def __repr__(self) -> str:
         return f"<UserLessonProgress(id={self.id}, user_id={self.user_id}, lesson_id={self.lesson_id})>"
+
+
+class CourseExperiment(TimestampMixin, Base):
+    """A/B experiment run against a course.
+
+    ``variants`` holds ``[{"name": "control", "weight": 0.5, "exposures": n,
+    "conversions": n, ...}]``; results are derived from those counters by
+    :meth:`app.services.advanced_course_service.AdvancedCourseService.get_experiment_results`.
+    """
+
+    __tablename__ = "course_experiments"
+
+    id: Mapped[IntPK]
+    course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), index=True)
+    instructor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+
+    name: Mapped[str] = mapped_column(String(255))
+    hypothesis: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[ExperimentStatus] = mapped_column(
+        _enum_column(ExperimentStatus, "experiment_status"), default=ExperimentStatus.RUNNING
+    )
+
+    variants: Mapped[list[Any]]
+    success_metrics: Mapped[list[str]]
+    estimated_duration_days: Mapped[int] = mapped_column(default=14)
+
+    start_date: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
+    end_date: Mapped[datetime | None]
+
+    course: Mapped[Course] = relationship()
+    instructor: Mapped[User] = relationship()
+
+    def __repr__(self) -> str:
+        return f"<CourseExperiment(id={self.id}, course_id={self.course_id}, status={self.status})>"

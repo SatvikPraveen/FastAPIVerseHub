@@ -165,7 +165,7 @@ async def disable_mfa(
 
     # Verify TOTP token or backup code
     valid = False
-    if request.token:
+    if request.token and current_user.mfa_secret:
         totp = pyotp.TOTP(current_user.mfa_secret)
         valid = totp.verify(request.token, valid_window=1)
     elif request.backup_code:
@@ -218,7 +218,7 @@ async def login_with_mfa(
 
         # Verify MFA token or backup code
         valid = False
-        if mfa_token:
+        if mfa_token and user.mfa_secret:
             totp = pyotp.TOTP(user.mfa_secret)
             valid = totp.verify(mfa_token, valid_window=1)
         elif backup_code:
@@ -370,7 +370,11 @@ async def request_passwordless_auth(
         # Send magic link via email
         await auth_service.send_magic_link_email(user.email, magic_token)
     elif request.method == "sms":
-        # Send code via SMS (if implemented)
+        if not user.phone:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No phone number on file for SMS delivery",
+            )
         await auth_service.send_magic_link_sms(user.phone, magic_token)
 
     return {"message": "Authentication link sent successfully"}
@@ -389,7 +393,7 @@ async def verify_magic_link(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token type"
             )
 
-        user_id = int(payload.get("sub"))
+        user_id = security_manager.subject_id(payload)
         auth_service = AuthService(db)
         user = await auth_service.get_user_by_id(user_id)
 
@@ -438,10 +442,13 @@ async def list_active_sessions(
 
 @router.delete("/sessions/{session_id}")
 async def revoke_session(
-    session_id: str, current_user: User = Depends(get_current_active_user), redis=Depends(get_redis)
+    session_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+    redis=Depends(get_redis),
 ) -> dict[str, str]:
     """Revoke specific session."""
-    auth_service = AuthService()
+    auth_service = AuthService(db)
 
     await auth_service.revoke_session(current_user.id, session_id, redis)
 
@@ -450,10 +457,12 @@ async def revoke_session(
 
 @router.post("/sessions/revoke-all")
 async def revoke_all_sessions(
-    current_user: User = Depends(get_current_active_user), redis=Depends(get_redis)
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+    redis=Depends(get_redis),
 ) -> dict[str, str]:
     """Revoke all user sessions except current."""
-    auth_service = AuthService()
+    auth_service = AuthService(db)
 
     revoked_count = await auth_service.revoke_all_sessions(current_user.id, redis)
 

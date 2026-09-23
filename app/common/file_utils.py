@@ -8,6 +8,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import aiofiles
 from fastapi import HTTPException, UploadFile, status
@@ -50,7 +51,7 @@ class FileManager:
 
         # Check MIME type
         if file.content_type:
-            expected_mime = mimetypes.guess_type(file.filename)[0]
+            expected_mime = mimetypes.guess_type(file.filename or "")[0]
             if expected_mime and not file.content_type.startswith(expected_mime.split("/")[0]):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -59,7 +60,7 @@ class FileManager:
 
     async def save_file(
         self, file: UploadFile, user_id: int, subfolder: str | None = None
-    ) -> dict[str, any]:
+    ) -> dict[str, Any]:
         """Save uploaded file to disk."""
         # Generate unique filename
         file_extension = Path(file.filename).suffix if file.filename else ""
@@ -120,7 +121,7 @@ class FileManager:
             while chunk := await file.read(chunk_size):
                 yield chunk
 
-    def get_file_info(self, file_path: str) -> dict[str, any] | None:
+    def get_file_info(self, file_path: str) -> dict[str, Any] | None:
         """Get file information."""
         path = Path(file_path)
         if not path.exists():
@@ -153,10 +154,9 @@ class FileManager:
             thumbnail_path = path.parent / thumbnail_name
 
             # Create thumbnail
-            with Image.open(path) as image:
+            with Image.open(path) as source:
                 # Convert RGBA to RGB for JPEG
-                if image.mode in ("RGBA", "LA", "P"):
-                    image = image.convert("RGB")
+                image = source.convert("RGB") if source.mode in ("RGBA", "LA", "P") else source
 
                 # Create thumbnail with aspect ratio preserved
                 image.thumbnail(thumbnail_size, Image.Resampling.LANCZOS)
@@ -193,7 +193,7 @@ class FileManager:
         extension = Path(file_path).suffix.lower().lstrip(".")
         return extension in doc_extensions
 
-    async def get_file_metadata(self, file_path: str) -> dict[str, any]:
+    async def get_file_metadata(self, file_path: str) -> dict[str, Any]:
         """Extract file metadata."""
         info = self.get_file_info(file_path)
         if not info:
@@ -224,7 +224,7 @@ class FileManager:
         else:
             return "other"
 
-    async def _get_image_metadata(self, file_path: str) -> dict[str, any]:
+    async def _get_image_metadata(self, file_path: str) -> dict[str, Any]:
         """Get image-specific metadata."""
         try:
             with Image.open(file_path) as image:
@@ -239,13 +239,13 @@ class FileManager:
         except Exception:
             return {}
 
-    async def _get_video_metadata(self, file_path: str) -> dict[str, any]:
+    async def _get_video_metadata(self, file_path: str) -> dict[str, Any]:
         """Get video-specific metadata."""
         # Placeholder for video metadata extraction
         # Would require ffmpeg-python or similar
         return {"duration": None, "width": None, "height": None, "codec": None, "bitrate": None}
 
-    async def _get_audio_metadata(self, file_path: str) -> dict[str, any]:
+    async def _get_audio_metadata(self, file_path: str) -> dict[str, Any]:
         """Get audio-specific metadata."""
         # Placeholder for audio metadata extraction
         # Would require mutagen or similar
@@ -268,11 +268,14 @@ class FileManager:
             optimized_name = f"opt_{path.stem}.jpg"
             optimized_path = path.parent / optimized_name
 
-            with Image.open(path) as image:
+            with Image.open(path) as source:
+                image: Image.Image = source
                 # Convert to RGB for JPEG
-                if image.mode in ("RGBA", "LA", "P"):
-                    rgb_image = Image.new("RGB", image.size, (255, 255, 255))
-                    rgb_image.paste(image, mask=image.split()[-1] if image.mode == "RGBA" else None)
+                if source.mode in ("RGBA", "LA", "P"):
+                    rgb_image = Image.new("RGB", source.size, (255, 255, 255))
+                    rgb_image.paste(
+                        source, mask=source.split()[-1] if source.mode == "RGBA" else None
+                    )
                     image = rgb_image
 
                 # Resize if too large

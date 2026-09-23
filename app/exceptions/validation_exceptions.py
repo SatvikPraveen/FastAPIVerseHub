@@ -14,6 +14,7 @@ class ValidationException(UnprocessableEntityException):
         field: str | None = None,
         value: Any = None,
         details: dict[str, Any] | None = None,
+        error_code: str = "VALIDATION_ERROR",
     ):
         if details is None:
             details = {}
@@ -24,7 +25,7 @@ class ValidationException(UnprocessableEntityException):
         if value is not None:
             details["value"] = str(value)
 
-        super().__init__(message=message, error_code="VALIDATION_ERROR", details=details)
+        super().__init__(message=message, error_code=error_code, details=details)
 
 
 class FieldValidationException(ValidationException):
@@ -259,7 +260,7 @@ class SpamException(ContentValidationException):
         message: str = "Content identified as spam",
         confidence: float | None = None,
     ):
-        details = {"field": field}
+        details: dict[str, Any] = {"field": field}
         if confidence:
             details["spam_confidence"] = confidence
 

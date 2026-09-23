@@ -2,6 +2,7 @@
 
 import asyncio
 from logging.config import fileConfig
+from typing import Any
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
@@ -21,13 +22,30 @@ if config.config_file_name is not None:
 import app.models  # noqa: F401 — registers all tables
 from app.core.config import settings
 from app.models.base import Base
+from app.models.types import UTCDateTime
 
 target_metadata = Base.metadata
 
 
+def render_item(type_: str, obj: Any, autogen_context: Any) -> str | bool:
+    """Render app-specific column types as plain SQLAlchemy types.
+
+    Migrations must not import application code: a migration written today
+    has to keep working after the model layer is refactored.
+    """
+    if type_ == "type" and isinstance(obj, UTCDateTime):
+        return "sa.DateTime(timezone=True)"
+    return False
+
+
 def get_url() -> str:
-    """Return the async-compatible database URL."""
-    url = settings.DATABASE_URL or ""
+    """Return the async-compatible database URL.
+
+    ``alembic -x`` style overrides are not needed: a ``sqlalchemy.url`` set
+    programmatically on the Config (as the migration tests do) wins over the
+    application settings.
+    """
+    url = config.get_main_option("sqlalchemy.url") or settings.DATABASE_URL or ""
     # alembic needs +asyncpg driver for async migrations
     return url.replace("postgresql://", "postgresql+asyncpg://")
 
@@ -41,6 +59,8 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        render_item=render_item,
+        render_as_batch=url.startswith("sqlite"),
     )
 
     with context.begin_transaction():
@@ -52,6 +72,8 @@ def do_run_migrations(connection: Connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
+        render_item=render_item,
+        render_as_batch=connection.dialect.name == "sqlite",
     )
     with context.begin_transaction():
         context.run_migrations()

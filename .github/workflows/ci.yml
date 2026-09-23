@@ -32,8 +32,6 @@ jobs:
   typecheck:
     name: mypy
     runs-on: ubuntu-latest
-    # Advisory until the SQLAlchemy models are fully migrated to Mapped[] typing.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3

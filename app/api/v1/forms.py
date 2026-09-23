@@ -1,11 +1,12 @@
 # File: app/api/v1/forms.py
 
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_active_user, get_db
+from app.core.dependencies import get_current_active_user, get_current_user_optional, get_db
 from app.models.user import User
 from app.services.form_service import FormService
 
@@ -108,7 +109,7 @@ async def submit_feedback_form(
 @router.post("/survey")
 async def submit_survey_response(
     survey_response: SurveyResponse,
-    current_user: User | None = Depends(get_current_active_user),
+    current_user: User | None = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     """Submit survey response."""
@@ -162,11 +163,11 @@ async def submit_multipart_form(
     uploaded_files = {}
 
     if profile_picture:
-        if not profile_picture.content_type.startswith("image/"):
+        if not (profile_picture.content_type or "").startswith("image/"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Profile picture must be an image"
             )
-        if profile_picture.size > 5 * 1024 * 1024:  # 5MB
+        if (profile_picture.size or 0) > 5 * 1024 * 1024:  # 5MB
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Profile picture must be under 5MB"
             )
@@ -178,11 +179,11 @@ async def submit_multipart_form(
         uploaded_files["profile_picture"] = saved_file
 
     if resume:
-        if not resume.content_type == "application/pdf":
+        if resume.content_type != "application/pdf":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Resume must be a PDF file"
             )
-        if resume.size > 10 * 1024 * 1024:  # 10MB
+        if (resume.size or 0) > 10 * 1024 * 1024:  # 10MB
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Resume must be under 10MB"
             )
@@ -300,7 +301,7 @@ async def get_submission_details(
         "id": submission.id,
         "form_type": submission.form_type,
         "status": submission.status,
-        "data": submission.form_data,
+        "data": submission.data,
         "created_at": submission.created_at,
         "updated_at": submission.updated_at,
         "processed_at": submission.processed_at,
@@ -312,21 +313,7 @@ async def get_active_surveys(db: AsyncSession = Depends(get_db)) -> dict:
     """Get list of active surveys."""
     form_service = FormService(db)
 
-    surveys = await form_service.get_active_surveys()
-
-    return {
-        "surveys": [
-            {
-                "id": survey.id,
-                "title": survey.title,
-                "description": survey.description,
-                "estimated_time_minutes": survey.estimated_time_minutes,
-                "total_questions": len(survey.questions),
-                "response_count": survey.response_count,
-            }
-            for survey in surveys
-        ]
-    }
+    return {"surveys": await form_service.get_active_surveys()}
 
 
 @router.get("/surveys/{survey_id}")
@@ -354,15 +341,6 @@ async def get_survey_details(survey_id: int, db: AsyncSession = Depends(get_db))
 
 
 @router.post("/validate")
-async def validate_form_data(form_type: str, form_data: dict) -> dict[str, bool]:
-    """Validate form data without submitting."""
-    form_service = FormService()
-
-    # Perform validation based on form type
-    validation_result = await form_service.validate_form_data(form_type, form_data)
-
-    return {
-        "valid": validation_result["valid"],
-        "errors": validation_result.get("errors", []),
-        "warnings": validation_result.get("warnings", []),
-    }
+async def validate_form_data(form_type: str, form_data: dict[str, Any]) -> dict[str, Any]:
+    """Validate form data without submitting (no database access)."""
+    return FormService.validate_form_data(form_type, form_data)

@@ -88,7 +88,6 @@ async def get_custom_recommendations(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Get customized course recommendations based on specific criteria."""
-    AdvancedCourseService(db)
     ai_service = AIService()
 
     recommendations = await ai_service.generate_custom_recommendations(
@@ -261,9 +260,10 @@ async def optimize_course(
 
     # Generate optimization suggestions
     optimization_results = await ai_service.analyze_course_optimization(
-        course_data=course_data,
+        course_id=course_id,
         optimization_goals=request.optimization_goals,
         target_metrics=request.target_metrics,
+        performance_data=course_data,
     )
 
     # Save optimization report

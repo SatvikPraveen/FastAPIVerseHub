@@ -38,7 +38,7 @@ class ValidationUtils:
 
         try:
             result = urlparse(url)
-            return result.scheme in allowed_schemes and result.netloc and len(url) <= 2048
+            return bool(result.scheme in allowed_schemes and result.netloc and len(url) <= 2048)
         except Exception:
             return False
 

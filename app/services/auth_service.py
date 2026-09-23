@@ -186,7 +186,7 @@ class AuthService:
             .order_by(DeviceRegistration.last_used_at.desc())
         )
         result = await self.db.execute(query)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def revoke_device(self, user_id: int, device_id: int) -> None:
         """Revoke a trusted device."""
@@ -368,4 +368,4 @@ class AuthService:
         result = await self.db.execute(query)
         await self.db.commit()
 
-        return result.rowcount
+        return int(getattr(result, "rowcount", 0) or 0)

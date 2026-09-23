@@ -111,7 +111,7 @@ class CourseWithStats(CourseResponse):
 
     total_enrollments: int = 0
     completed_enrollments: int = 0
-    average_rating: float = 0.0
+    average_rating: Decimal = Decimal("0.00")
     total_reviews: int = 0
     completion_rate: float = 0.0
     revenue_total: Decimal | None = None

@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import Callable
+from typing import Any
 
 from fastapi import Request, Response
 from redis.exceptions import RedisError
@@ -116,7 +117,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         utcnow()
 
         # Define rate limit windows
-        limits = [
+        limits: list[dict[str, Any]] = [
             {
                 "window": 60,  # 1 minute
                 "limit": self.calls_per_minute,

@@ -133,10 +133,11 @@ class FormSubmission(TimestampMixin, Base):
     id: Mapped[IntPK]
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))  # None = anonymous
 
-    form_type: Mapped[str] = mapped_column(String(50))  # contact, feedback, survey, multipart
+    form_type: Mapped[str] = mapped_column(String(50), index=True)  # contact, feedback, ...
     data: Mapped[dict[str, Any]]  # serialised form payload
     status: Mapped[str] = mapped_column(String(20), default="pending")
     is_anonymous: Mapped[bool] = mapped_column(default=False)
+    processed_at: Mapped[datetime | None]
 
     # Contact-specific
     submitter_name: Mapped[str | None] = mapped_column(String(255))
@@ -163,6 +164,8 @@ class Survey(TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text)
     questions: Mapped[list[Any]]  # list of question objects
+    instructions: Mapped[str | None] = mapped_column(Text)
+    estimated_time_minutes: Mapped[int | None]
     is_active: Mapped[bool] = mapped_column(default=True)
 
     def __repr__(self) -> str:

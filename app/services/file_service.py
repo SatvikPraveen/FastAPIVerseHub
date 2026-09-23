@@ -90,7 +90,7 @@ class FileService:
         )
         result = await self.db.execute(query)
         await self.db.commit()
-        return result.rowcount > 0
+        return int(getattr(result, "rowcount", 0) or 0) > 0
 
     async def update_file_metadata(
         self,

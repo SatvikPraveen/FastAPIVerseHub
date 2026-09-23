@@ -130,10 +130,18 @@ class AIService:
             for i, goal in enumerate(optimization_goals[:5])
         ]
 
+        completion_rate = float((performance_data or {}).get("completion_rate", 0.0))
+        score = round(min(100.0, 40.0 + completion_rate * 0.6), 1)
         return {
             "course_id": course_id,
+            "score": score,
             "suggestions": suggestions,
-            "overall_health_score": 72.5,
+            "projections": {
+                goal: {"current": completion_rate, "target": target_metrics.get(goal, 0.0)}
+                for goal in optimization_goals
+            },
+            "auto_applicable": [s for s in suggestions if s["priority"] != "high"],
+            "manual_review": [s for s in suggestions if s["priority"] == "high"],
             "priority_actions": [s for s in suggestions if s["priority"] == "high"],
             "generated_at": utcnow().isoformat(),
         }

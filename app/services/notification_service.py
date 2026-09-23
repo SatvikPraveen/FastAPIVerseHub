@@ -144,7 +144,7 @@ class SSEManager:
         self.user_clients: dict[int, set[str]] = defaultdict(set)
         self.channel_subscribers: dict[str, set[str]] = defaultdict(set)
         self.message_queues: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        self.stats = {"total_messages_sent": 0, "start_time": utcnow()}
+        self.stats: dict[str, Any] = {"total_messages_sent": 0, "start_time": utcnow()}
 
     async def subscribe_to_channel(self, client_id: str, channel: str, user_id: int | None = None):
         """Subscribe client to SSE channel."""

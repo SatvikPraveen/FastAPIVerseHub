@@ -9,6 +9,7 @@ from app.models.base import Base
 # Course-side models
 from app.models.course import (
     Course,
+    CourseExperiment,
     CourseReview,
     Enrollment,
     Lesson,
@@ -38,6 +39,7 @@ __all__ = [
     "APIKeyUsageLog",
     "Base",
     "Course",
+    "CourseExperiment",
     "CourseReview",
     "DeviceRegistration",
     "Enrollment",

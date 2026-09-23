@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
 
     # Database
-    DATABASE_URL: str | None = None
+    DATABASE_URL: str = ""
     DATABASE_HOST: str = "localhost"
     DATABASE_PORT: int = 5432
     DATABASE_NAME: str = "fastapi_db"
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     DATABASE_PASSWORD: str = "fastapi_pass"
 
     # Redis
-    REDIS_URL: str | None = None
+    REDIS_URL: str = ""
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0

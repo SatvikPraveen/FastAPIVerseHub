@@ -4,6 +4,7 @@ import logging
 import time
 import uuid
 from collections.abc import Callable
+from typing import Any
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -157,8 +158,8 @@ class MetricsCollectionMiddleware(BaseHTTPMiddleware):
         self.collect_metrics = collect_metrics
         self.request_count = 0
         self.total_duration = 0.0
-        self.status_counts = {}
-        self.endpoint_metrics = {}
+        self.status_counts: dict[int, int] = {}
+        self.endpoint_metrics: dict[str, dict[str, Any]] = {}
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Collect metrics during request processing."""

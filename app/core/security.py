@@ -64,7 +64,7 @@ password_hasher = PasswordHasher()
 class SecurityManager:
     """Centralized security management for the application."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.hasher = password_hasher
         self.algorithm = settings.JWT_ALGORITHM
         self.secret_key = settings.JWT_SECRET_KEY
@@ -137,19 +137,22 @@ class SecurityManager:
                 headers={"WWW-Authenticate": "Bearer"},
             ) from exc
 
-    def get_user_id_from_token(self, token: str) -> int:
-        """Extract user ID from JWT token."""
-        payload = self.verify_token(token)
-        user_id: int = payload.get("sub")
-
-        if user_id is None:
+    @staticmethod
+    def subject_id(payload: dict[str, Any]) -> int:
+        """Return the integer user id carried in the ``sub`` claim, or raise 401."""
+        sub = payload.get("sub")
+        try:
+            return int(str(sub))
+        except (TypeError, ValueError):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
-            )
+            ) from None
 
-        return user_id
+    def get_user_id_from_token(self, token: str) -> int:
+        """Extract user ID from JWT token."""
+        return self.subject_id(self.verify_token(token))
 
     def verify_access_token(self, token: str) -> dict[str, Any]:
         """Verify access token specifically."""

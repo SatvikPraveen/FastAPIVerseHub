@@ -42,13 +42,13 @@ async def upload_file(
     # Create file record in database
     file_record = await file_service.create_file_record(
         filename=saved_file["filename"],
-        original_filename=file.filename,
+        original_filename=file.filename or saved_file["filename"],
         file_path=saved_file["file_path"],
         file_size=saved_file["file_size"],
-        content_type=file.content_type,
+        content_type=file.content_type or "application/octet-stream",
         user_id=current_user.id,
         description=description,
-        category=category,
+        category=category or "general",
         is_public=is_public,
     )
 
@@ -98,13 +98,13 @@ async def upload_multiple_files(
             # Create file record
             file_record = await file_service.create_file_record(
                 filename=saved_file["filename"],
-                original_filename=file.filename,
+                original_filename=file.filename or saved_file["filename"],
                 file_path=saved_file["file_path"],
                 file_size=saved_file["file_size"],
-                content_type=file.content_type,
+                content_type=file.content_type or "application/octet-stream",
                 user_id=current_user.id,
                 description=description,
-                category=category,
+                category=category or "general",
                 is_public=is_public,
             )
 
@@ -303,6 +303,8 @@ async def update_file_info(
     updated_file = await file_service.update_file_info(
         file_id=file_id, description=description, category=category, is_public=is_public
     )
+    if updated_file is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
     return {
         "id": updated_file.id,

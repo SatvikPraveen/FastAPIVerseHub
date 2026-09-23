@@ -6,7 +6,7 @@ from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time import utcnow
-from app.models.course import Course, CourseReview, Enrollment
+from app.models.course import Course, CourseReview, CourseStatus, Enrollment, EnrollmentStatus
 from app.models.user import User
 from app.schemas.course import CourseCreate, CourseUpdate
 
@@ -88,7 +88,7 @@ class CourseService:
         result = await self.db.execute(query)
         await self.db.commit()
 
-        return result.rowcount > 0
+        return int(getattr(result, "rowcount", 0) or 0) > 0
 
     async def get_courses(
         self,
@@ -148,10 +148,10 @@ class CourseService:
 
         # Execute queries
         result = await self.db.execute(query)
-        courses = result.scalars().all()
+        courses = list(result.scalars().all())
 
         count_result = await self.db.execute(count_query)
-        total = count_result.scalar()
+        total = int(count_result.scalar() or 0)
 
         return courses, total
 
@@ -162,7 +162,7 @@ class CourseService:
             raise ValueError("Course not found")
 
         course.is_published = True
-        course.status = "published"
+        course.status = CourseStatus.PUBLISHED
         course.published_at = utcnow()
         course.updated_at = utcnow()
 
@@ -178,7 +178,7 @@ class CourseService:
             raise ValueError("Course not found")
 
         course.is_published = False
-        course.status = "draft"
+        course.status = CourseStatus.DRAFT
         course.updated_at = utcnow()
 
         await self.db.commit()
@@ -277,7 +277,7 @@ class CourseService:
                 }
             )
 
-        return enrollments, total
+        return enrollments, int(total or 0)
 
     async def get_course_stats(self, course_id: int) -> dict[str, Any]:
         """Get comprehensive course statistics."""
@@ -285,7 +285,7 @@ class CourseService:
         enrollment_query = select(
             func.count(Enrollment.id).label("total_enrollments"),
             func.count(Enrollment.id)
-            .filter(Enrollment.status == "completed")
+            .filter(Enrollment.status == EnrollmentStatus.COMPLETED)
             .label("completed_enrollments"),
             func.avg(Enrollment.progress_percentage).label("avg_progress"),
         ).where(Enrollment.course_id == course_id)
@@ -296,11 +296,8 @@ class CourseService:
             func.avg(CourseReview.rating).label("avg_rating"),
         ).where(CourseReview.course_id == course_id)
 
-        enrollment_result = await self.db.execute(enrollment_query)
-        enrollment_stats = enrollment_result.first()
-
-        review_result = await self.db.execute(review_query)
-        review_stats = review_result.first()
+        enrollment_stats = (await self.db.execute(enrollment_query)).one()
+        review_stats = (await self.db.execute(review_query)).one()
 
         return {
             "total_enrollments": enrollment_stats.total_enrollments or 0,

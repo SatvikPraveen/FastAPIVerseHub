@@ -5,8 +5,7 @@ from collections.abc import AsyncGenerator
 import redis.asyncio as redis
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
 from app.core.security import security_manager
@@ -19,7 +18,7 @@ engine = create_async_engine(
     future=True,
 )
 
-AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 # Redis setup
 redis_client: redis.Redis | None = None
@@ -59,14 +58,7 @@ async def get_current_user(
     try:
         # Verify access token
         payload = security_manager.verify_access_token(credentials.credentials)
-        user_id = int(payload.get("sub"))
-
-        if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        user_id = security_manager.subject_id(payload)
 
         # Check JTI blacklist
         jti = payload.get("jti")

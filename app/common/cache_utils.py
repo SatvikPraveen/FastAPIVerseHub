@@ -100,7 +100,9 @@ class CacheManager:
         client = await self.get_redis()
 
         # Serialize values in mapping
-        serialized_mapping = {k: json.dumps(v, default=str) for k, v in mapping.items()}
+        serialized_mapping: dict[Any, Any] = {
+            k: json.dumps(v, default=str) for k, v in mapping.items()
+        }
 
         await client.hset(key, mapping=serialized_mapping)
 
@@ -164,7 +166,7 @@ class CacheManager:
         values = []
         for _ in range(count):
             value = await client.rpop(key)
-            if value:
+            if isinstance(value, str | bytes):
                 values.append(json.loads(value))
         return values
 

@@ -26,7 +26,7 @@ async def get_current_user_ws(
 
     try:
         payload = security_manager.verify_access_token(token)
-        user_id = int(payload.get("sub"))
+        user_id = security_manager.subject_id(payload)
 
         # Verify user exists and is active
         from app.services.user_service import UserService

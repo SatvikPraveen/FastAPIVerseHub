@@ -72,7 +72,7 @@ class UserService:
         result = await self.db.execute(query)
         await self.db.commit()
 
-        return result.rowcount > 0
+        return int(getattr(result, "rowcount", 0) or 0) > 0
 
     async def get_users(
         self,
@@ -114,10 +114,10 @@ class UserService:
 
         # Execute queries
         result = await self.db.execute(query)
-        users = result.scalars().all()
+        users = list(result.scalars().all())
 
         count_result = await self.db.execute(count_query)
-        total = count_result.scalar()
+        total = int(count_result.scalar() or 0)
 
         return users, total
 
@@ -127,7 +127,7 @@ class UserService:
         result = await self.db.execute(query)
         await self.db.commit()
 
-        return result.rowcount > 0
+        return int(getattr(result, "rowcount", 0) or 0) > 0
 
     async def deactivate_user(self, user_id: int) -> bool:
         """Deactivate a user account."""
@@ -135,7 +135,7 @@ class UserService:
         result = await self.db.execute(query)
         await self.db.commit()
 
-        return result.rowcount > 0
+        return int(getattr(result, "rowcount", 0) or 0) > 0
 
     async def get_user_stats(self, user_id: int) -> dict[str, Any]:
         """Get comprehensive user statistics via real DB queries."""
@@ -212,7 +212,7 @@ class UserService:
         search_query = search_query.limit(limit)
         result = await self.db.execute(search_query)
 
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def update_user_activity(self, user_id: int) -> None:
         """Update user's last activity timestamp."""
@@ -262,7 +262,7 @@ class UserService:
             and_(User.skill_level == skill_level, User.is_active, User.deleted_at.is_(None))
         )
         result = await self.db.execute(query)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def get_recently_active_users(self, days: int = 7) -> list[User]:
         """Get users who were active in the last N days."""
@@ -279,7 +279,7 @@ class UserService:
         )
 
         result = await self.db.execute(query)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def count_users_by_status(self) -> dict[str, int]:
         """Count users by different status categories."""
@@ -288,7 +288,7 @@ class UserService:
             and_(User.is_active, User.deleted_at.is_(None))
         )
         inactive_query = select(func.count(User.id)).where(
-            and_(not User.is_active, User.deleted_at.is_(None))
+            and_(User.is_active.is_(False), User.deleted_at.is_(None))
         )
         verified_query = select(func.count(User.id)).where(
             and_(User.is_verified, User.deleted_at.is_(None))
@@ -300,8 +300,8 @@ class UserService:
         verified_result = await self.db.execute(verified_query)
 
         return {
-            "total": total_result.scalar(),
-            "active": active_result.scalar(),
-            "inactive": inactive_result.scalar(),
-            "verified": verified_result.scalar(),
+            "total": int(total_result.scalar() or 0),
+            "active": int(active_result.scalar() or 0),
+            "inactive": int(inactive_result.scalar() or 0),
+            "verified": int(verified_result.scalar() or 0),
         }

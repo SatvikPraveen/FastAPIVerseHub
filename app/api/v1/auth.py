@@ -104,7 +104,7 @@ async def refresh_token(refresh_data: RefreshTokenRequest) -> dict[str, Any]:
     try:
         # Verify refresh token
         payload = security_manager.verify_refresh_token(refresh_data.refresh_token)
-        user_id = int(payload.get("sub"))
+        user_id = security_manager.subject_id(payload)
 
         if user_id is None:
             raise HTTPException(
@@ -250,7 +250,7 @@ async def reset_password(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reset token")
 
     try:
-        user_id = int(payload.get("sub"))
+        user_id = security_manager.subject_id(payload)
         auth_service = AuthService(db)
 
         # Reset password
