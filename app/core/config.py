@@ -32,6 +32,7 @@ class Settings(BaseSettings):
 
     # Application
     APP_NAME: str = "FastAPIVerseHub"
+    FRONTEND_URL: str = "http://localhost:3000"  # base for links in emails
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     HOST: str = "0.0.0.0"

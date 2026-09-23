@@ -3,17 +3,20 @@
 from typing import Any
 
 import redis.asyncio as redis
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, get_db, get_redis
+from app.common.email_utils import EmailService
+from app.core.dependencies import get_client_ip, get_current_user, get_db, get_redis, get_user_agent
+from app.core.logging import get_logger
 from app.core.security import security_manager
 from app.core.time import utcnow
 from app.models.user import User
 from app.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
+    LogoutRequest,
     PasswordResetConfirm,
     PasswordResetRequest,
     RefreshTokenRequest,
@@ -21,137 +24,130 @@ from app.schemas.auth import (
     UserRegistration,
 )
 from app.services.auth_service import AuthService
+from app.services.token_service import TokenService
 
 router = APIRouter()
 security = HTTPBearer()
+logger = get_logger(__name__)
+
+
+def _public_user(user: User) -> dict[str, Any]:
+    return {
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name,
+        "is_active": user.is_active,
+    }
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(
-    user_data: UserRegistration, db: AsyncSession = Depends(get_db)
+    user_data: UserRegistration,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Register a new user."""
+    """Register a new user and start a session.
+
+    The welcome email is sent after the response: SMTP latency or an outage
+    must not slow down or fail registration.
+    """
     auth_service = AuthService(db)
 
-    # Check if user already exists
-    existing_user = await auth_service.get_user_by_email(user_data.email)
-    if existing_user:
+    if await auth_service.get_user_by_email(user_data.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
         )
 
-    # Create new user
     user = await auth_service.create_user(user_data)
+    background_tasks.add_task(EmailService().send_welcome_email, user.email, user.full_name)
 
-    # Generate tokens
-    tokens = security_manager.create_token_pair(
-        user_id=user.id, additional_data={"email": user.email, "is_superuser": user.is_superuser}
+    tokens = await TokenService(db).issue_pair(
+        user, ip_address=get_client_ip(request), user_agent=get_user_agent(request)
     )
-
-    return {
-        **tokens,
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "full_name": user.full_name,
-            "is_active": user.is_active,
-        },
-    }
+    return {**tokens, "user": _public_user(user)}
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(login_data: LoginRequest, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    """Authenticate user and return tokens."""
+async def login(
+    login_data: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
+    """Authenticate user and return an access/refresh token pair."""
     auth_service = AuthService(db)
 
-    # Authenticate user
     user = await auth_service.authenticate_user(
         email=login_data.email, password=login_data.password
     )
-
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
 
-    # Generate tokens
-    tokens = security_manager.create_token_pair(
-        user_id=user.id, additional_data={"email": user.email, "is_superuser": user.is_superuser}
+    tokens = await TokenService(db).issue_pair(
+        user, ip_address=get_client_ip(request), user_agent=get_user_agent(request)
     )
-
-    # Update last login
     await auth_service.update_last_login(user.id)
-
-    return {
-        **tokens,
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "full_name": user.full_name,
-            "is_active": user.is_active,
-        },
-    }
+    return {**tokens, "user": _public_user(user)}
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(refresh_data: RefreshTokenRequest) -> dict[str, Any]:
-    """Refresh access token using refresh token."""
-    try:
-        # Verify refresh token
-        payload = security_manager.verify_refresh_token(refresh_data.refresh_token)
-        user_id = security_manager.subject_id(payload)
+async def refresh_token(
+    refresh_data: RefreshTokenRequest, request: Request, db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
+    """Rotate a refresh token.
 
-        if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token"
-            )
-
-        # Create new access token
-        new_access_token = security_manager.create_access_token(
-            data={
-                "sub": str(user_id),
-                "email": payload.get("email"),
-                "is_superuser": payload.get("is_superuser", False),
-            }
-        )
-
-        return {
-            "access_token": new_access_token,
-            "refresh_token": refresh_data.refresh_token,
-            "token_type": "bearer",
-        }
-
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token"
-        ) from exc
+    The presented token is invalidated and a new pair is returned. Presenting
+    a token that was already rotated revokes the whole session family.
+    """
+    return await TokenService(db).rotate(
+        refresh_data.refresh_token,
+        ip_address=get_client_ip(request),
+        user_agent=get_user_agent(request),
+    )
 
 
 @router.post("/logout")
 async def logout(
     credentials: HTTPAuthorizationCredentials = Depends(security),
+    body: LogoutRequest | None = Body(default=None),
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
     redis_client: redis.Redis = Depends(get_redis),
-) -> dict[str, str]:
-    """Logout user — blacklist the current access token's JTI in Redis."""
+) -> dict[str, Any]:
+    """Log out of the current session.
+
+    The access token's ``jti`` is blacklisted until it expires; if the client
+    sends its refresh token it is revoked too, so the session cannot be resumed.
+    """
+    revoked_refresh = False
     try:
         payload = security_manager.verify_access_token(credentials.credentials)
-        jti = payload.get("jti")
-        exp = payload.get("exp")
+        jti, exp = payload.get("jti"), payload.get("exp")
         if jti and exp:
             ttl = int(exp - utcnow().timestamp())
             if ttl > 0:
                 await redis_client.set(f"blacklist:jti:{jti}", "1", ex=ttl)
     except Exception:
-        pass  # Even if blacklisting fails, proceed with logout response
-    return {"message": "Successfully logged out"}
+        logger.warning("could not blacklist access token on logout")
+
+    if body and body.refresh_token:
+        revoked_refresh = await TokenService(db).revoke_refresh_token(
+            body.refresh_token, current_user.id
+        )
+    return {"message": "Successfully logged out", "refresh_token_revoked": revoked_refresh}
+
+
+@router.post("/logout-all")
+async def logout_everywhere(
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
+    """Revoke every refresh token the user holds (all devices)."""
+    revoked = await TokenService(db).revoke_all_for_user(current_user.id)
+    return {"message": f"Revoked {revoked} sessions", "revoked_sessions": revoked}
 
 
 @router.get("/me")
@@ -212,23 +208,21 @@ async def change_password(
 
 @router.post("/forgot-password")
 async def forgot_password(
-    request: PasswordResetRequest, db: AsyncSession = Depends(get_db)
+    request: PasswordResetRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
-    """Request password reset."""
-    auth_service = AuthService(db)
+    """Request a password reset link.
 
-    # Check if user exists
-    user = await auth_service.get_user_by_email(request.email)
-    if not user:
-        # Don't reveal if email exists or not for security
-        return {"message": "If the email exists, a reset link has been sent"}
-
-    # Generate a dedicated password_reset token (type != "access")
-    security_manager.create_password_reset_token(user_id=user.id)
-
-    # TODO: Send email with reset link
-    # await email_service.send_password_reset_email(user.email, reset_token)
-
+    The response is identical whether or not the address exists, and the
+    email goes out after the response so timing does not reveal it either.
+    """
+    user = await AuthService(db).get_user_by_email(request.email)
+    if user and user.is_active:
+        reset_token = security_manager.create_password_reset_token(user_id=user.id)
+        background_tasks.add_task(
+            EmailService().send_password_reset_email, user.email, reset_token, user.full_name
+        )
     return {"message": "If the email exists, a reset link has been sent"}
 
 

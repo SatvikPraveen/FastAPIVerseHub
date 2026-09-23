@@ -39,10 +39,6 @@ class AuthService:
         self.db.add(user)
         await self.db.commit()
         await self.db.refresh(user)
-
-        # Send welcome email
-        await self.email_service.send_welcome_email(user.email, user.full_name)
-
         return user
 
     async def authenticate_user(self, email: str, password: str) -> User | None:

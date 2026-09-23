@@ -70,6 +70,12 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
+class LogoutRequest(BaseModel):
+    """Optional logout body: include the refresh token to revoke the session."""
+
+    refresh_token: str | None = None
+
+
 class TokenVerificationResponse(BaseModel):
     """Schema for token verification response."""
 

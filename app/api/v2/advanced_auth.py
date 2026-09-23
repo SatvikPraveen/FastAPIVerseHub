@@ -8,17 +8,24 @@ from typing import Any
 
 import pyotp
 import qrcode
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_active_user, get_db, get_redis
+from app.core.dependencies import (
+    get_client_ip,
+    get_current_active_user,
+    get_db,
+    get_redis,
+    get_user_agent,
+)
 from app.core.security import security_manager
 from app.core.time import utcnow
 from app.models.user import User
 from app.schemas.auth import TokenResponse
 from app.services.auth_service import AuthService
+from app.services.token_service import TokenService
 
 router = APIRouter()
 security = HTTPBearer()
@@ -184,6 +191,7 @@ async def disable_mfa(
 
 @router.post("/login/mfa", response_model=TokenResponse)
 async def login_with_mfa(
+    request: Request,
     email: EmailStr,
     password: str,
     mfa_token: str | None = None,
@@ -228,8 +236,11 @@ async def login_with_mfa(
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid MFA code")
 
     # Generate tokens
-    tokens = security_manager.create_token_pair(
-        user_id=user.id, additional_data={"email": user.email, "mfa_verified": True}
+    tokens = await TokenService(db).issue_pair(
+        user,
+        extra_claims={"mfa_verified": True},
+        ip_address=get_client_ip(request),
+        user_agent=get_user_agent(request),
     )
 
     await auth_service.update_last_login(user.id)
@@ -309,7 +320,7 @@ async def revoke_device(
 
 @router.post("/social/auth")
 async def social_auth(
-    request: SocialAuthRequest, db: AsyncSession = Depends(get_db)
+    request: SocialAuthRequest, http_request: Request, db: AsyncSession = Depends(get_db)
 ) -> dict[str, Any]:
     """Authenticate with social provider."""
     auth_service = AuthService(db)
@@ -334,8 +345,11 @@ async def social_auth(
     )
 
     # Generate tokens
-    tokens = security_manager.create_token_pair(
-        user_id=user.id, additional_data={"email": user.email, "social_provider": request.provider}
+    tokens = await TokenService(db).issue_pair(
+        user,
+        extra_claims={"social_provider": request.provider},
+        ip_address=get_client_ip(http_request),
+        user_agent=get_user_agent(http_request),
     )
 
     return {
@@ -382,7 +396,7 @@ async def request_passwordless_auth(
 
 @router.post("/passwordless/verify", response_model=TokenResponse)
 async def verify_magic_link(
-    request: MagicLinkVerifyRequest, db: AsyncSession = Depends(get_db)
+    request: MagicLinkVerifyRequest, http_request: Request, db: AsyncSession = Depends(get_db)
 ) -> dict[str, Any]:
     """Verify magic link token."""
     try:
@@ -401,8 +415,11 @@ async def verify_magic_link(
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user")
 
         # Generate regular tokens
-        tokens = security_manager.create_token_pair(
-            user_id=user.id, additional_data={"email": user.email, "passwordless": True}
+        tokens = await TokenService(db).issue_pair(
+            user,
+            extra_claims={"passwordless": True},
+            ip_address=get_client_ip(http_request),
+            user_agent=get_user_agent(http_request),
         )
 
         await auth_service.update_last_login(user.id)

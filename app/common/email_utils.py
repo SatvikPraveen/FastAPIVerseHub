@@ -185,7 +185,7 @@ class EmailService:
         self, email: str, reset_token: str, name: str | None = None
     ) -> bool:
         """Send password reset email."""
-        reset_link = f"https://example.com/reset-password?token={reset_token}"
+        reset_link = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password?token={reset_token}"
 
         context = {
             "name": name or email.split("@")[0],
