@@ -1,16 +1,19 @@
 # File: app/middleware/rate_limiter.py
 
-import time
+import logging
 from typing import Callable, Dict, Optional
 from datetime import datetime, timedelta
 
 from fastapi import Request, Response
+from redis.exceptions import RedisError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from app.common.cache_utils import cache_manager, RateLimitCache
 from app.core.config import settings
 from app.exceptions.base_exceptions import RateLimitException
+
+logger = logging.getLogger(__name__)
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -41,8 +44,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Get client identifier
         client_id = self._get_client_identifier(request)
         
-        # Check rate limits
-        rate_limit_info = await self._check_rate_limits(client_id, request)
+        # Check rate limits. If Redis is unreachable we fail *open*: a cache
+        # outage must degrade rate limiting, not take the whole API down.
+        try:
+            rate_limit_info = await self._check_rate_limits(client_id, request)
+        except (RedisError, OSError) as exc:
+            logger.warning("Rate limiter unavailable, failing open: %s", exc)
+            return await call_next(request)
         
         if rate_limit_info["blocked"]:
             return JSONResponse(

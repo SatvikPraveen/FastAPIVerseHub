@@ -297,14 +297,6 @@ class ConfigurationException(InternalServerException):
             error_code=error_code,
             details=details
         )
-            details = {}
-        details["service"] = service_name
-        
-        super().__init__(
-            message=f"{service_name}: {message}",
-            error_code=error_code,
-            details=details
-        )
 
 
 class BusinessLogicException(BadRequestException):
@@ -337,3 +329,12 @@ class ResourceLimitException(BadRequestException):
         message = f"{resource} limit exceeded. Current: {current}, Limit: {limit}"
         
         if details is None:
+            details = {}
+
+        details.update({"resource": resource, "limit": limit, "current": current})
+
+        super().__init__(
+            message=message,
+            error_code=error_code,
+            details=details
+        )

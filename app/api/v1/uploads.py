@@ -18,7 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.file_utils import FileManager
 from app.core.config import settings
-from app.core.dependencies import get_current_active_user, get_db
+from app.core.dependencies import (
+    get_current_active_user,
+    get_current_user_optional,
+    get_db,
+)
 from app.models.user import User
 from app.schemas.common import PaginatedResponse
 from app.services.file_service import FileService
@@ -221,10 +225,14 @@ async def get_file_info(
 @router.get("/download/{file_id}")
 async def download_file(
     file_id: int,
-    current_user: User = Depends(get_current_active_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db)
 ):
-    """Download file."""
+    """Download a file.
+
+    Public files are downloadable anonymously; private files require the
+    owner's credentials.
+    """
     file_service = FileService(db)
     
     file_record = await file_service.get_file_by_id(file_id)
@@ -236,14 +244,21 @@ async def download_file(
         )
     
     # Check permissions
-    if not file_record.is_public and file_record.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
+    if not file_record.is_public:
+        if current_user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if file_record.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
     
     # Check if file exists on disk
-    if not os.path.exists(file_record.file_path):
+    if not os.path.isfile(file_record.file_path):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not found on disk"
@@ -285,7 +300,7 @@ async def stream_file(
         )
     
     # Check if file exists
-    if not os.path.exists(file_record.file_path):
+    if not os.path.isfile(file_record.file_path):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not found on disk"
@@ -376,7 +391,7 @@ async def delete_file(
     await file_manager.delete_file(file_record.file_path)
     
     # Delete database record
-    await file_service.delete_file(file_id)
+    await file_service.delete_file(file_id, current_user.id)
 
 
 @router.get("/categories")

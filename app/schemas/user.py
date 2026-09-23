@@ -150,18 +150,20 @@ class PasswordChangeRequest(BaseModel):
     new_password: str
     confirm_new_password: str
     
-    @validator('confirm_new_password')
-    def passwords_match(cls, v, values, **kwargs):
-        if 'new_password' in values and v != values['new_password']:
-            raise ValueError('New passwords do not match')
-        return v
-    
-    @validator('new_password')
-    def validate_new_password(cls, v, values, **kwargs):
-        if 'current_password' in values and v == values['current_password']:
+    @field_validator('new_password')
+    @classmethod
+    def validate_new_password(cls, v: str, info) -> str:
+        if 'current_password' in info.data and v == info.data['current_password']:
             raise ValueError('New password must be different from current password')
         if len(v) < 8:
             raise ValueError('Password must be at least 8 characters long')
+        return v
+
+    @field_validator('confirm_new_password')
+    @classmethod
+    def passwords_match(cls, v: str, info) -> str:
+        if 'new_password' in info.data and v != info.data['new_password']:
+            raise ValueError('New passwords do not match')
         return v
 
 
@@ -182,9 +184,8 @@ class UserSearchResult(BaseModel):
     total_courses: int = 0
     average_rating: Optional[float] = None
     specialties: List[str] = []
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserActivity(BaseModel):

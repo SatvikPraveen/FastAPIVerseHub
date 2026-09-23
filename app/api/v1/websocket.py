@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_db
+from app.core.dependencies import get_current_user, get_db
 from app.core.security import security_manager
 from app.services.notification_service import NotificationService, ConnectionManager
 

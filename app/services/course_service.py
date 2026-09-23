@@ -66,7 +66,7 @@ class CourseService:
         if not course:
             raise ValueError("Course not found")
         
-        update_data = course_update.dict(exclude_unset=True)
+        update_data = course_update.model_dump(exclude_unset=True)
         
         # Update slug if title changed
         if "title" in update_data:

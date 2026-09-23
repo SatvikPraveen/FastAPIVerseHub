@@ -278,7 +278,7 @@ async def enroll_in_course(
         "message": "Successfully enrolled in course",
         "course_id": course_id,
         "user_id": current_user.id,
-        "enrolled_at": enrollment.created_at
+        "enrolled_at": enrollment.enrolled_at
     }
 
 

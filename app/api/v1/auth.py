@@ -13,6 +13,8 @@ from app.models.user import User
 from app.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
+    PasswordResetConfirm,
+    PasswordResetRequest,
     RefreshTokenRequest,
     TokenResponse,
     UserRegistration
@@ -234,14 +236,14 @@ async def change_password(
 
 @router.post("/forgot-password")
 async def forgot_password(
-    email: str,
+    request: PasswordResetRequest,
     db: AsyncSession = Depends(get_db)
 ) -> Dict[str, str]:
     """Request password reset."""
     auth_service = AuthService(db)
 
     # Check if user exists
-    user = await auth_service.get_user_by_email(email)
+    user = await auth_service.get_user_by_email(request.email)
     if not user:
         # Don't reveal if email exists or not for security
         return {"message": "If the email exists, a reset link has been sent"}
@@ -257,21 +259,27 @@ async def forgot_password(
 
 @router.post("/reset-password")
 async def reset_password(
-    token: str,
-    new_password: str,
+    request: PasswordResetConfirm,
     db: AsyncSession = Depends(get_db)
 ) -> Dict[str, str]:
     """Reset password using reset token."""
+    token, new_password = request.token, request.new_password
     try:
-        # Verify reset token
+        # Verify reset token (signature + expiry)
         payload = security_manager.verify_token(token)
-        
-        if payload.get("type") != "password_reset":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid reset token"
-            )
-        
+    except HTTPException:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+
+    if payload.get("type") != "password_reset":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid reset token"
+        )
+
+    try:
         user_id = int(payload.get("sub"))
         auth_service = AuthService(db)
         

@@ -165,11 +165,13 @@ class RefreshToken(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
-    user = relationship("User")
+    user = relationship("User", foreign_keys=[user_id])
     device = relationship("DeviceRegistration")
     revoked_by_user = relationship("User", foreign_keys=[revoked_by])
-    parent_token = relationship("RefreshToken", remote_side=[id])
-    child_tokens = relationship("RefreshToken", remote_side=[parent_token_id])
+    parent_token = relationship(
+        "RefreshToken", remote_side=[id], back_populates="child_tokens"
+    )
+    child_tokens = relationship("RefreshToken", back_populates="parent_token")
     
     def __repr__(self):
         return f"<RefreshToken(id={self.id}, user_id={self.user_id}, jti='{self.jti}')>"

@@ -1,12 +1,14 @@
 # File: app/main.py
 
+import logging
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator, Dict
 
 import uvicorn
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.api.v1 import auth, courses, forms, sse, uploads, users, websocket
@@ -17,6 +19,8 @@ from app.exceptions.base_exceptions import BaseAppException
 from app.middleware.cors_middleware import setup_cors
 from app.middleware.rate_limiter import RateLimitMiddleware
 from app.middleware.request_timer import RequestTimingMiddleware
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -149,40 +153,100 @@ def setup_routers(app: FastAPI) -> None:
     )
 
 
+_STATUS_ERROR_CODES = {
+    400: "BAD_REQUEST",
+    401: "UNAUTHORIZED",
+    403: "FORBIDDEN",
+    404: "NOT_FOUND",
+    405: "METHOD_NOT_ALLOWED",
+    409: "CONFLICT",
+    413: "PAYLOAD_TOO_LARGE",
+    415: "UNSUPPORTED_MEDIA_TYPE",
+    422: "VALIDATION_ERROR",
+    429: "RATE_LIMIT_EXCEEDED",
+    500: "INTERNAL_SERVER_ERROR",
+    503: "SERVICE_UNAVAILABLE",
+}
+
+
+def _error_code_for(status_code: int) -> str:
+    return _STATUS_ERROR_CODES.get(status_code, f"HTTP_{status_code}")
+
+
 def setup_exception_handlers(app: FastAPI) -> None:
-    """Configure global exception handlers."""
-    
+    """Configure global exception handlers.
+
+    Every error response shares one envelope::
+
+        {"error": "<MACHINE_CODE>", "message": "<human text>", "details": {...},
+         "request_id": "<correlation id>"}
+
+    so clients can branch on ``error`` without parsing prose.
+    """
+
+    def _envelope(request: Request, status_code: int, error: str, message: str,
+                  details: Any = None) -> JSONResponse:
+        body: Dict[str, Any] = {
+            "error": error,
+            "message": message,
+            "details": details or {},
+            "request_id": getattr(request.state, "request_id", None),
+        }
+        return JSONResponse(status_code=status_code, content=body)
+
     @app.exception_handler(BaseAppException)
-    async def custom_exception_handler(request: Request, exc: BaseAppException):
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={
-                "error": exc.error_code,
-                "message": exc.message,
-                "details": exc.details
+    async def app_exception_handler(request: Request, exc: BaseAppException) -> JSONResponse:
+        response = _envelope(request, exc.status_code, exc.error_code, exc.message, exc.details)
+        if exc.headers:
+            response.headers.update(exc.headers)
+        return response
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        detail = exc.detail
+        if isinstance(detail, dict):
+            message = str(detail.get("message") or detail.get("detail") or "Request failed")
+            details = detail
+        else:
+            message = str(detail) if detail else "Request failed"
+            details = {}
+        if exc.status_code == 404 and not exc.detail:
+            message = "The requested resource was not found"
+            details = {"path": request.url.path}
+        response = _envelope(request, exc.status_code, _error_code_for(exc.status_code), message, details)
+        if exc.headers:
+            response.headers.update(exc.headers)
+        return response
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+        errors = [
+            {
+                "field": ".".join(str(loc) for loc in err.get("loc", ()) if loc != "body"),
+                "message": err.get("msg", ""),
+                "type": err.get("type", ""),
             }
+            for err in exc.errors()
+        ]
+        return _envelope(
+            request,
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "VALIDATION_ERROR",
+            "Request validation failed",
+            {"errors": errors},
         )
-    
-    @app.exception_handler(404)
-    async def not_found_handler(request: Request, exc):
-        return JSONResponse(
-            status_code=404,
-            content={
-                "error": "NOT_FOUND",
-                "message": "The requested resource was not found",
-                "path": str(request.url.path)
-            }
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception(
+            "Unhandled exception on %s %s", request.method, request.url.path,
+            extra={"request_id": getattr(request.state, "request_id", None)},
         )
-    
-    @app.exception_handler(500)
-    async def internal_server_error_handler(request: Request, exc):
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": "INTERNAL_SERVER_ERROR",
-                "message": "An unexpected error occurred",
-                "request_id": getattr(request.state, "request_id", None)
-            }
+        return _envelope(
+            request,
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "INTERNAL_SERVER_ERROR",
+            "An unexpected error occurred",
         )
 
 

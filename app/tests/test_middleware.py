@@ -15,7 +15,7 @@ class TestRateLimitMiddleware:
         """Test requests under rate limit are allowed."""
         # Make a few requests that should be under the limit
         for i in range(3):
-            response = await async_client.get("/health")
+            response = await async_client.get("/")
             assert_response_success(response)
             
             # Check rate limit headers
@@ -25,7 +25,7 @@ class TestRateLimitMiddleware:
     
     async def test_rate_limit_headers_present(self, async_client: AsyncClient):
         """Test that rate limit headers are present in responses."""
-        response = await async_client.get("/health")
+        response = await async_client.get("/")
         
         assert_response_success(response)
         assert "X-RateLimit-Limit" in response.headers
@@ -117,19 +117,16 @@ class TestRequestTimingMiddleware:
         
         assert id1 != id2
     
-    async def test_slow_request_logging(self, async_client: AsyncClient):
-        """Test that slow requests are logged appropriately."""
-        # Create an endpoint that takes time (mock slow response)
-        with patch("time.perf_counter") as mock_timer:
-            # Mock a slow request (2 seconds)
-            mock_timer.side_effect = [0, 2.0]
-            
-            response = await async_client.get("/health")
-            
-            # Should still succeed but timing would be logged
-            assert_response_success(response)
-            
-            # In real implementation, this would check logs
+    async def test_slow_request_logging(self, async_client: AsyncClient, caplog):
+        """Requests slower than the configured threshold emit a warning."""
+        from app.middleware import request_timer
+
+        with patch.object(request_timer, "SLOW_REQUEST_THRESHOLD_SECONDS", 0.0):
+            with caplog.at_level("WARNING", logger="app.middleware.request_timer"):
+                response = await async_client.get("/health")
+
+        assert_response_success(response)
+        assert any("Slow request detected" in rec.message for rec in caplog.records)
     
     async def test_request_failure_timing(self, async_client: AsyncClient):
         """Test timing for failed requests."""

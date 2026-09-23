@@ -10,11 +10,20 @@ from app.core.config import settings
 
 
 class CacheManager:
-    """Redis cache manager with advanced features."""
+    """Redis cache manager with advanced features.
+
+    The underlying client is lazily created from ``settings.REDIS_URL`` but can
+    be injected (``cache_manager.bind(client)``) so tests and the application
+    lifespan share one connection pool.
+    """
     
-    def __init__(self):
-        self.redis_client: Optional[redis.Redis] = None
+    def __init__(self, client: Optional[redis.Redis] = None):
+        self.redis_client: Optional[redis.Redis] = client
         self.default_ttl = 3600  # 1 hour
+
+    def bind(self, client: Optional[redis.Redis]) -> None:
+        """Inject (or clear) the Redis client used by this manager."""
+        self.redis_client = client
     
     async def get_redis(self) -> redis.Redis:
         """Get Redis client instance."""
@@ -25,6 +34,12 @@ class CacheManager:
                 decode_responses=True
             )
         return self.redis_client
+
+    async def close(self) -> None:
+        """Close the underlying client, if any."""
+        if self.redis_client is not None:
+            await self.redis_client.aclose()
+            self.redis_client = None
     
     async def set(
         self,
@@ -204,13 +219,13 @@ def cached(
             cache_key = ":".join(key_parts)
             
             # Try to get from cache
-            cached_result = await cache_manager.get(cache_key, serialize=serialize)
+            cached_result = await cache_manager.get(cache_key)
             if cached_result is not None:
                 return cached_result
             
             # Execute function and cache result
             result = await func(*args, **kwargs)
-            await cache_manager.set(cache_key, result, ttl=ttl, serialize=serialize)
+            await cache_manager.set(cache_key, result, ttl=ttl)
             
             return result
         return wrapper

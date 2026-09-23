@@ -1,26 +1,30 @@
 # File: app/tests/conftest.py
 
-import asyncio
 import pytest
 import pytest_asyncio
 from datetime import datetime
 from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock
 
+import fakeredis.aioredis
+
 from fastapi.testclient import TestClient
-from httpx import AsyncClient
-from sqlalchemy import create_engine
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.main import app
+# NOTE: ``import app.models`` must come *before* ``from app.main import app``.
+# The package import binds the name ``app`` to the package; the second import
+# then rebinds it to the FastAPI instance, which is what the fixtures need.
+import app.models  # noqa: F401 — registers all model classes on the shared Base metadata
+from app.common.cache_utils import cache_manager
 from app.core.dependencies import get_db, get_redis
 from app.core.security import security_manager
+from app.main import app
 from app.models.base import Base
-from app.models.user import User
 from app.models.course import Course
-import app.models  # noqa: F401 — registers all model classes on the shared Base metadata
+from app.models.user import User
 
 
 # Test database URL (SQLite in-memory for fast testing)
@@ -40,14 +44,6 @@ TestingSessionLocal = sessionmaker(
 )
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
 @pytest_asyncio.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Create a test database session."""
@@ -64,18 +60,21 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         await conn.run_sync(Base.metadata.drop_all)
 
 
-@pytest.fixture
-def mock_redis():
-    """Mock Redis client."""
-    redis_mock = AsyncMock()
-    redis_mock.get.return_value = None
-    redis_mock.set.return_value = True
-    redis_mock.delete.return_value = 1
-    redis_mock.exists.return_value = False
-    redis_mock.expire.return_value = True
-    redis_mock.ttl.return_value = 3600
-    redis_mock.incrby.return_value = 1
-    return redis_mock
+@pytest_asyncio.fixture
+async def mock_redis():
+    """In-memory Redis (fakeredis) with real command semantics.
+
+    Bound to the global ``cache_manager`` so middleware (rate limiting) and
+    dependency-injected consumers (``get_redis``) all see the same store.
+    """
+    client = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    cache_manager.bind(client)
+    try:
+        yield client
+    finally:
+        await client.flushall()
+        cache_manager.bind(None)
+        await client.aclose()
 
 
 @pytest_asyncio.fixture
@@ -110,7 +109,10 @@ async def async_client(db_session: AsyncSession, mock_redis) -> AsyncGenerator[A
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_redis] = override_get_redis
     
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
         yield client
     
     app.dependency_overrides.clear()
@@ -269,12 +271,15 @@ def mock_image_file():
 
 
 @pytest.fixture
-def websocket_client():
-    """WebSocket test client."""
-    from fastapi.testclient import TestClient
-    
-    with TestClient(app) as client:
-        yield client
+def websocket_client(db_session: AsyncSession, mock_redis):
+    """Synchronous test client for WebSocket tests, sharing the test DB and fakeredis."""
+    app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_redis] = lambda: mock_redis
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.fixture

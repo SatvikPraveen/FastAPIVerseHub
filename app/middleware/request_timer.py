@@ -12,6 +12,8 @@ from app.core.logging import request_logger
 
 logger = logging.getLogger(__name__)
 
+SLOW_REQUEST_THRESHOLD_SECONDS = 1.0
+
 
 class RequestTimingMiddleware(BaseHTTPMiddleware):
     """Middleware to time requests and add correlation IDs."""
@@ -74,7 +76,7 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
                 )
             
             # Log slow requests
-            if duration > 1.0:  # Log requests taking more than 1 second
+            if duration > SLOW_REQUEST_THRESHOLD_SECONDS:
                 logger.warning(
                     f"Slow request detected: {request.method} {request.url.path} "
                     f"took {duration:.4f}s",

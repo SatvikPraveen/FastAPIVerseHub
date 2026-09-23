@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Generic, List, Optional, TypeVar, Any, Dict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 T = TypeVar('T')
 
@@ -18,9 +18,8 @@ class PaginatedResponse(BaseModel, Generic[T]):
     has_prev: bool = False
     page: Optional[int] = None
     total_pages: Optional[int] = None
-    
-    class Config:
-        arbitrary_types_allowed = True
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class SuccessResponse(BaseModel):
@@ -63,7 +62,7 @@ class SearchParams(BaseModel):
     """Common search parameters schema."""
     q: Optional[str] = Field(None, description="Search query")
     sort_by: Optional[str] = Field("created_at", description="Sort field")
-    order: str = Field("desc", regex="^(asc|desc)$", description="Sort order")
+    order: str = Field("desc", pattern="^(asc|desc)$", description="Sort order")
     filters: Optional[Dict[str, Any]] = Field(None, description="Additional filters")
 
 
@@ -91,46 +90,39 @@ class DateRangeFilter(BaseModel):
     """Date range filter schema."""
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
-    
-    def __post_init__(self):
+
+    @model_validator(mode="after")
+    def check_range(self) -> "DateRangeFilter":
         if self.start_date and self.end_date and self.start_date > self.end_date:
             raise ValueError("start_date cannot be after end_date")
+        return self
 
 
 class SortOption(BaseModel):
     """Sort option schema."""
     field: str
-    direction: str = Field("asc", regex="^(asc|desc)$")
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "field": "created_at",
-                "direction": "desc"
-            }
-        }
+    direction: str = Field("asc", pattern="^(asc|desc)$")
+
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"field": "created_at", "direction": "desc"}}
+    )
 
 
 class FilterOption(BaseModel):
     """Filter option schema."""
     field: str
-    operator: str = Field("eq", regex="^(eq|ne|gt|gte|lt|lte|in|nin|contains|startswith|endswith)$")
+    operator: str = Field("eq", pattern="^(eq|ne|gt|gte|lt|lte|in|nin|contains|startswith|endswith)$")
     value: Any
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "field": "status",
-                "operator": "eq",
-                "value": "active"
-            }
-        }
+
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"field": "status", "operator": "eq", "value": "active"}}
+    )
 
 
 class BulkOperation(BaseModel):
     """Bulk operation schema."""
     action: str
-    ids: List[int] = Field(..., min_items=1, max_items=1000)
+    ids: List[int] = Field(..., min_length=1, max_length=1000)
     data: Optional[Dict[str, Any]] = None
 
 
@@ -171,7 +163,7 @@ class Notification(BaseModel):
     id: Optional[int] = None
     title: str
     message: str
-    type: str = Field("info", regex="^(info|success|warning|error)$")
+    type: str = Field("info", pattern="^(info|success|warning|error)$")
     read: bool = False
     data: Optional[Dict[str, Any]] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -223,7 +215,7 @@ class APIUsage(BaseModel):
 class SystemStatus(BaseModel):
     """System status schema."""
     component: str
-    status: str = Field("operational", regex="^(operational|degraded|down|maintenance)$")
+    status: str = Field("operational", pattern="^(operational|degraded|down|maintenance)$")
     message: Optional[str] = None
     last_updated: datetime = Field(default_factory=datetime.utcnow)
     uptime_percentage: Optional[float] = None
@@ -238,7 +230,7 @@ class ValidationError(BaseModel):
 
 class BatchRequest(BaseModel):
     """Batch request schema."""
-    requests: List[Dict[str, Any]] = Field(..., min_items=1, max_items=100)
+    requests: List[Dict[str, Any]] = Field(..., min_length=1, max_length=100)
     stop_on_error: bool = False
 
 

@@ -22,11 +22,17 @@ sse_manager = SSEManager()
 
 
 async def event_stream(
+    request: Request,
     user_id: Optional[int] = None,
     channels: Optional[str] = None,
-    last_event_id: Optional[str] = None
+    last_event_id: Optional[str] = None,
+    poll_interval: float = 1.0,
 ) -> AsyncGenerator[str, None]:
-    """Generate Server-Sent Events stream."""
+    """Generate Server-Sent Events stream.
+
+    The loop exits as soon as the client disconnects so subscriptions are
+    released promptly instead of lingering until the next write fails.
+    """
     client_id = f"sse_{user_id}_{datetime.utcnow().timestamp()}"
     
     # Parse channels
@@ -49,7 +55,7 @@ async def event_stream(
         # Send heartbeat every 30 seconds and check for messages
         last_heartbeat = datetime.utcnow()
         
-        while True:
+        while not await request.is_disconnected():
             current_time = datetime.utcnow()
             
             # Check for new messages
@@ -76,7 +82,7 @@ async def event_stream(
                 last_heartbeat = current_time
             
             # Wait before next check
-            await asyncio.sleep(1)
+            await asyncio.sleep(poll_interval)
     
     except asyncio.CancelledError:
         logger.info(f"SSE stream cancelled for client {client_id}")
@@ -105,7 +111,7 @@ async def sse_endpoint(
     user_id = current_user.id if current_user else None
     
     return EventSourceResponse(
-        event_stream(user_id, channels, last_event_id),
+        event_stream(request, user_id, channels, last_event_id),
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",

@@ -306,9 +306,7 @@ class TestPasswordOperations:
     async def test_reset_password_success(self, async_client: AsyncClient, test_user: User):
         """Test successful password reset."""
         # Create a reset token
-        reset_token = security_manager.create_access_token(
-            data={"sub": str(test_user.id), "type": "password_reset"}
-        )
+        reset_token = security_manager.create_password_reset_token(user_id=test_user.id)
         
         response = await async_client.post(
             "/api/v1/auth/reset-password",

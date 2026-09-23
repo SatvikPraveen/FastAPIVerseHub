@@ -1,39 +1,82 @@
 # File: app/core/security.py
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 from typing import Any, Dict, Optional, Union
 
+import bcrypt
 from fastapi import HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+from jose import ExpiredSignatureError, JWTError, jwt
 
 from app.core.config import settings
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt silently truncated passwords at 72 bytes for years; bcrypt>=5 now
+# raises instead.  We reject over-long passwords explicitly so the failure is
+# deterministic and surfaces as a validation error rather than a 500.
+BCRYPT_MAX_PASSWORD_BYTES = 72
 
 # JWT token bearer
 security = HTTPBearer()
+
+
+class PasswordHasher:
+    """Thin, dependency-free wrapper around bcrypt.
+
+    Replaces ``passlib`` which is unmaintained and incompatible with
+    bcrypt >= 4.1.  Hash format is unchanged (``$2b$``), so existing rows
+    keep verifying.
+    """
+
+    def __init__(self, rounds: int = 12):
+        self.rounds = rounds
+
+    @staticmethod
+    def _to_bytes(password: str) -> bytes:
+        raw = password.encode("utf-8")
+        if len(raw) > BCRYPT_MAX_PASSWORD_BYTES:
+            raise ValueError(
+                f"Password cannot exceed {BCRYPT_MAX_PASSWORD_BYTES} bytes when UTF-8 encoded"
+            )
+        return raw
+
+    def hash(self, password: str) -> str:
+        return bcrypt.hashpw(self._to_bytes(password), bcrypt.gensalt(self.rounds)).decode("ascii")
+
+    def verify(self, password: str, hashed: str) -> bool:
+        try:
+            return bcrypt.checkpw(self._to_bytes(password), hashed.encode("ascii"))
+        except (ValueError, TypeError):
+            # Malformed hash or over-long password: never raise from verify.
+            return False
+
+    def needs_rehash(self, hashed: str) -> bool:
+        """True when the stored hash uses fewer rounds than currently configured."""
+        try:
+            return int(hashed.split("$")[2]) < self.rounds
+        except (IndexError, ValueError):
+            return True
+
+
+password_hasher = PasswordHasher()
 
 
 class SecurityManager:
     """Centralized security management for the application."""
     
     def __init__(self):
-        self.pwd_context = pwd_context
+        self.hasher = password_hasher
         self.algorithm = settings.JWT_ALGORITHM
         self.secret_key = settings.JWT_SECRET_KEY
     
     # Password operations
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """Verify a plain password against a hashed password."""
-        return self.pwd_context.verify(plain_password, hashed_password)
+        return self.hasher.verify(plain_password, hashed_password)
     
     def get_password_hash(self, password: str) -> str:
         """Generate password hash."""
-        return self.pwd_context.hash(password)
+        return self.hasher.hash(password)
     
     # JWT token operations
     def create_access_token(
@@ -45,15 +88,15 @@ class SecurityManager:
         to_encode = data.copy()
         
         if expires_delta:
-            expire = datetime.utcnow() + expires_delta
+            expire = datetime.now(timezone.utc) + expires_delta
         else:
-            expire = datetime.utcnow() + timedelta(
+            expire = datetime.now(timezone.utc) + timedelta(
                 minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
             )
         
         to_encode.update({
             "exp": expire,
-            "iat": datetime.utcnow(),
+            "iat": datetime.now(timezone.utc),
             "type": "access",
             "jti": str(uuid.uuid4())
         })
@@ -75,15 +118,15 @@ class SecurityManager:
         to_encode = data.copy()
         
         if expires_delta:
-            expire = datetime.utcnow() + expires_delta
+            expire = datetime.now(timezone.utc) + expires_delta
         else:
-            expire = datetime.utcnow() + timedelta(
+            expire = datetime.now(timezone.utc) + timedelta(
                 days=settings.REFRESH_TOKEN_EXPIRE_DAYS
             )
         
         to_encode.update({
             "exp": expire,
-            "iat": datetime.utcnow(),
+            "iat": datetime.now(timezone.utc),
             "type": "refresh",
             "jti": str(uuid.uuid4())
         })
@@ -105,17 +148,14 @@ class SecurityManager:
                 algorithms=[self.algorithm]
             )
             
-            # Check if token has expired
-            exp = payload.get("exp")
-            if exp and datetime.utcnow() > datetime.fromtimestamp(exp):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Token has expired",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            
             return payload
-            
+
+        except ExpiredSignatureError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has expired",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         except JWTError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -171,11 +211,11 @@ class SecurityManager:
         expires_minutes: int = 30
     ) -> str:
         """Create a short-lived password reset token."""
-        expire = datetime.utcnow() + timedelta(minutes=expires_minutes)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
         payload = {
             "sub": str(user_id),
             "exp": expire,
-            "iat": datetime.utcnow(),
+            "iat": datetime.now(timezone.utc),
             "type": "password_reset",
             "jti": str(uuid.uuid4())
         }

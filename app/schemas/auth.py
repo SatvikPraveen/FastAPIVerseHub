@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
 class LoginRequest(BaseModel):
@@ -16,7 +16,7 @@ class LoginRequest(BaseModel):
 class UserRegistration(BaseModel):
     """Schema for user registration request."""
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=8, max_length=72)
     confirm_password: str
     full_name: Optional[str] = None
     accept_terms: bool = True
@@ -84,43 +84,38 @@ class PasswordResetRequest(BaseModel):
 class PasswordResetConfirm(BaseModel):
     """Schema for password reset confirmation."""
     token: str
-    new_password: str
-    confirm_new_password: str
-    
-    @field_validator('new_password')
-    @classmethod
-    def validate_password(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError('Password must be at least 8 characters long')
-        return v
+    new_password: str = Field(..., min_length=8, max_length=72)
+    confirm_new_password: Optional[str] = None
 
     @field_validator('confirm_new_password')
     @classmethod
-    def passwords_match(cls, v: str, info) -> str:
-        if 'new_password' in info.data and v != info.data['new_password']:
+    def passwords_match(cls, v: Optional[str], info) -> Optional[str]:
+        if v is not None and 'new_password' in info.data and v != info.data['new_password']:
             raise ValueError('Passwords do not match')
         return v
 
 
 class ChangePasswordRequest(BaseModel):
-    """Schema for changing password."""
+    """Schema for changing password.
+
+    ``confirm_new_password`` is optional: API clients that already confirm
+    client-side may omit it, but when present it must match.
+    """
     current_password: str
-    new_password: str
-    confirm_new_password: str
+    new_password: str = Field(..., min_length=8, max_length=72)
+    confirm_new_password: Optional[str] = None
     
     @field_validator('new_password')
     @classmethod
     def validate_new_password(cls, v: str, info) -> str:
         if 'current_password' in info.data and v == info.data['current_password']:
             raise ValueError('New password must be different from current password')
-        if len(v) < 8:
-            raise ValueError('Password must be at least 8 characters long')
         return v
 
     @field_validator('confirm_new_password')
     @classmethod
-    def passwords_match(cls, v: str, info) -> str:
-        if 'new_password' in info.data and v != info.data['new_password']:
+    def passwords_match(cls, v: Optional[str], info) -> Optional[str]:
+        if v is not None and 'new_password' in info.data and v != info.data['new_password']:
             raise ValueError('New passwords do not match')
         return v
 
@@ -149,11 +144,11 @@ class MFAVerificationRequest(BaseModel):
     token: Optional[str] = None
     backup_code: Optional[str] = None
     
-    @validator('token', 'backup_code')
-    def at_least_one_required(cls, v, values):
-        if not v and not values.get('backup_code') and not values.get('token'):
+    @model_validator(mode="after")
+    def at_least_one_required(self) -> "MFAVerificationRequest":
+        if not self.token and not self.backup_code:
             raise ValueError('Either token or backup_code must be provided')
-        return v
+        return self
 
 
 class SocialAuthRequest(BaseModel):
@@ -162,8 +157,9 @@ class SocialAuthRequest(BaseModel):
     access_token: str
     id_token: Optional[str] = None
     
-    @validator('provider')
-    def validate_provider(cls, v):
+    @field_validator('provider')
+    @classmethod
+    def validate_provider(cls, v: str) -> str:
         allowed_providers = ['google', 'github', 'linkedin', 'facebook']
         if v not in allowed_providers:
             raise ValueError(f'Provider must be one of: {", ".join(allowed_providers)}')
@@ -189,8 +185,9 @@ class DeviceRegistrationRequest(BaseModel):
     browser_name: Optional[str] = None
     browser_version: Optional[str] = None
     
-    @validator('device_type')
-    def validate_device_type(cls, v):
+    @field_validator('device_type')
+    @classmethod
+    def validate_device_type(cls, v: str) -> str:
         allowed_types = ['mobile', 'tablet', 'desktop', 'tv', 'watch']
         if v not in allowed_types:
             raise ValueError(f'Device type must be one of: {", ".join(allowed_types)}')

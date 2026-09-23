@@ -9,43 +9,83 @@ from app.models.user import User
 from app.tests.conftest import assert_response_success, assert_response_error
 
 
+class _StubRequest:
+    """Minimal stand-in for ``starlette.Request`` that disconnects after N polls."""
+
+    def __init__(self, disconnect_after: int = 1):
+        self._remaining = disconnect_after
+
+    async def is_disconnected(self) -> bool:
+        if self._remaining <= 0:
+            return True
+        self._remaining -= 1
+        return False
+
+
+async def _collect_events(stream) -> list[str]:
+    events = []
+    async for chunk in stream:
+        events.append(chunk)
+    return events
+
+
 class TestSSEConnection:
-    """Test Server-Sent Events connection functionality."""
-    
-    async def test_sse_connect_success(self, async_client: AsyncClient):
-        """Test successful SSE connection."""
-        with patch("app.api.v1.sse.sse_manager") as mock_sse_manager:
-            mock_sse_manager.get_messages_for_client = AsyncMock(return_value=[])
-            mock_sse_manager.remove_client = AsyncMock()
-            
-            # This would normally stream, but we can test the endpoint exists
+    """Test Server-Sent Events stream generation.
+
+    ``httpx.ASGITransport`` buffers the entire response body, so an unbounded
+    stream cannot be consumed through the HTTP client.  These tests drive the
+    generator directly with a request stub that reports disconnection.
+    """
+
+    async def test_sse_connect_success(self):
+        """The first event is the ``connected`` handshake and the loop exits on disconnect."""
+        from app.api.v1.sse import event_stream
+
+        events = await asyncio.wait_for(
+            _collect_events(event_stream(_StubRequest(), poll_interval=0)), timeout=5
+        )
+        assert events, "stream produced no events"
+        assert events[0].startswith("event: connected")
+        assert "client_id" in events[0]
+
+    async def test_sse_connect_with_channels(self):
+        """Channels passed to the stream are subscribed and echoed in the handshake."""
+        from app.api.v1.sse import event_stream, sse_manager
+
+        events = await asyncio.wait_for(
+            _collect_events(
+                event_stream(_StubRequest(), channels="general,updates", poll_interval=0)
+            ),
+            timeout=5,
+        )
+        assert "general" in events[0] and "updates" in events[0]
+        # Subscriptions are cleaned up when the client disconnects.
+        stats = await sse_manager.get_stats()
+        assert stats["total_clients"] == 0
+
+    async def test_sse_connect_authenticated(self):
+        """An authenticated stream also subscribes to the user's private channel."""
+        from app.api.v1.sse import event_stream
+
+        events = await asyncio.wait_for(
+            _collect_events(event_stream(_StubRequest(), user_id=42, poll_interval=0)),
+            timeout=5,
+        )
+        assert events[0].startswith("event: connected")
+        assert "sse_42_" in events[0]
+
+    async def test_sse_endpoint_content_type(self, async_client: AsyncClient):
+        """The HTTP endpoint advertises the event-stream content type."""
+        with patch("app.api.v1.sse.event_stream") as mock_stream:
+            async def one_shot(*args, **kwargs):
+                yield "event: connected\ndata: {}\n\n"
+
+            mock_stream.side_effect = one_shot
             response = await async_client.get("/api/v1/sse/events")
-            
-            # SSE endpoint should return 200 and start streaming
-            assert response.status_code == 200
-            assert response.headers["content-type"] == "text/event-stream"
-    
-    async def test_sse_connect_with_channels(self, async_client: AsyncClient):
-        """Test SSE connection with channel subscription."""
-        with patch("app.api.v1.sse.sse_manager") as mock_sse_manager:
-            mock_sse_manager.get_messages_for_client = AsyncMock(return_value=[])
-            mock_sse_manager.subscribe_to_channel = AsyncMock()
-            mock_sse_manager.remove_client = AsyncMock()
-            
-            response = await async_client.get("/api/v1/sse/events?channels=general,updates")
-            
-            assert response.status_code == 200
-    
-    async def test_sse_connect_authenticated(self, async_client: AsyncClient, auth_headers):
-        """Test SSE connection with authentication."""
-        with patch("app.api.v1.sse.sse_manager") as mock_sse_manager:
-            mock_sse_manager.get_messages_for_client = AsyncMock(return_value=[])
-            mock_sse_manager.subscribe_to_user_events = AsyncMock()
-            mock_sse_manager.remove_client = AsyncMock()
-            
-            response = await async_client.get("/api/v1/sse/events", headers=auth_headers)
-            
-            assert response.status_code == 200
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        assert "event: connected" in response.text
 
 
 class TestSSEPublishing:
@@ -386,5 +426,5 @@ class TestSSEErrorHandling:
                 headers=auth_headers
             )
             
-            # Should either work or return appropriate error
-            assert response.status_code in [200, 400, 422]
+            # Should either work or return appropriate error (empty segment -> 404)
+            assert response.status_code in [200, 400, 404, 422]
