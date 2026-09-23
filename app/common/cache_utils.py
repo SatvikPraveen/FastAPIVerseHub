@@ -1,7 +1,6 @@
 # File: app/common/cache_utils.py
 
 import json
-from datetime import timedelta
 from functools import wraps
 from typing import Any
 
@@ -228,51 +227,6 @@ def cached(ttl: int = 3600, key_prefix: str = "", serialize: str = "json"):
         return wrapper
 
     return decorator
-
-
-class RateLimitCache:
-    """Rate limiting using Redis."""
-
-    def __init__(self, cache_manager: CacheManager):
-        self.cache = cache_manager
-
-    async def is_rate_limited(
-        self, key: str, limit: int, window_seconds: int
-    ) -> tuple[bool, dict[str, Any]]:
-        """Check if key is rate limited."""
-        current_time = utcnow()
-        current_time - timedelta(seconds=window_seconds)
-
-        # Use sliding window counter
-        pipe_key = f"rate_limit:{key}"
-
-        # Get current count
-        current_count = await self.cache.get(pipe_key, default=0)
-
-        if current_count >= limit:
-            ttl = await self.cache.ttl(pipe_key)
-            return True, {
-                "limit": limit,
-                "remaining": 0,
-                "reset_at": current_time + timedelta(seconds=ttl),
-                "retry_after": ttl,
-            }
-
-        # Increment counter
-        new_count = await self.cache.increment(pipe_key)
-
-        # Set expiration if this is the first increment
-        if new_count == 1:
-            await self.cache.expire(pipe_key, window_seconds)
-
-        ttl = await self.cache.ttl(pipe_key)
-
-        return False, {
-            "limit": limit,
-            "remaining": max(0, limit - new_count),
-            "reset_at": current_time + timedelta(seconds=ttl),
-            "retry_after": 0,
-        }
 
 
 class SessionCache:

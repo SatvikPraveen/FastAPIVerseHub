@@ -67,7 +67,7 @@ class SecurityManager:
     def __init__(self) -> None:
         self.hasher = password_hasher
         self.algorithm = settings.JWT_ALGORITHM
-        self.secret_key = settings.JWT_SECRET_KEY
+        self.secret_key = settings.JWT_SECRET_KEY.get_secret_value()
 
     # Password operations
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:

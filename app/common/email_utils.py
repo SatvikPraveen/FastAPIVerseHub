@@ -26,7 +26,9 @@ class EmailService:
         self.smtp_server = settings.EMAIL_HOST
         self.smtp_port = settings.EMAIL_PORT
         self.username = settings.EMAIL_USER
-        self.password = settings.EMAIL_PASSWORD
+        self.password = (
+            settings.EMAIL_PASSWORD.get_secret_value() if settings.EMAIL_PASSWORD else None
+        )
         self.from_email = settings.EMAIL_FROM
         self.use_tls = settings.EMAIL_USE_TLS
 

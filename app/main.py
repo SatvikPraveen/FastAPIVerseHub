@@ -1,42 +1,74 @@
 # File: app/main.py
+"""Application factory and ASGI entry point."""
 
-import logging
+import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
+import redis.asyncio as redis
 import uvicorn
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.api import health
 from app.api.v1 import auth, courses, forms, sse, uploads, users, websocket
 from app.api.v2 import advanced_auth, advanced_courses
+from app.common.cache_utils import cache_manager
+from app.core import metrics
 from app.core.config import settings
-from app.core.logging import setup_logging
+from app.core.dependencies import engine
+from app.core.logging import get_logger, setup_logging
 from app.exceptions.base_exceptions import BaseAppException
 from app.middleware.cors_middleware import setup_cors
 from app.middleware.rate_limiter import RateLimitMiddleware
-from app.middleware.request_timer import RequestTimingMiddleware
+from app.middleware.request_timer import RequestContextMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Application lifespan manager for startup and shutdown events."""
-    # Startup
+    """Start and stop shared resources.
+
+    Anything created here lives on ``app.state`` and is closed in reverse
+    order on shutdown, so a SIGTERM drains connections cleanly.
+    """
     setup_logging()
-    print(f"🚀 {settings.APP_NAME} v{settings.APP_VERSION} starting up...")
-    print(f"📊 Environment: {settings.ENVIRONMENT}")
-    print(f"🔧 Debug mode: {settings.DEBUG}")
+    app.state.started_at = time.time()
+    logger.info(
+        "application starting",
+        app=settings.APP_NAME,
+        version=settings.APP_VERSION,
+        environment=settings.ENVIRONMENT,
+        debug=settings.DEBUG,
+    )
 
-    yield
+    # Redis: one pool for cache, rate limiting, sessions and health checks.
+    # Tests bind a fake client before startup; do not replace it.
+    if cache_manager.redis_client is None:
+        cache_manager.bind(
+            redis.from_url(
+                settings.REDIS_URL,
+                encoding="utf-8",
+                decode_responses=True,
+                socket_connect_timeout=settings.HEALTH_CHECK_TIMEOUT,
+            )
+        )
+    app.state.redis = cache_manager.redis_client
+    app.state.db_engine = engine
 
-    # Shutdown
-    print(f"👋 {settings.APP_NAME} shutting down...")
+    try:
+        yield
+    finally:
+        logger.info("application shutting down")
+        await cache_manager.close()
+        await engine.dispose()
 
 
 def create_application() -> FastAPI:
@@ -46,9 +78,9 @@ def create_application() -> FastAPI:
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
         description="Comprehensive FastAPI learning hub with advanced features",
-        docs_url="/docs" if settings.DEBUG else None,
-        redoc_url="/redoc" if settings.DEBUG else None,
-        openapi_url="/openapi.json" if settings.DEBUG else None,
+        docs_url=None if settings.is_production else "/docs",
+        redoc_url=None if settings.is_production else "/redoc",
+        openapi_url=None if settings.is_production else "/openapi.json",
         lifespan=lifespan,
     )
 
@@ -65,41 +97,40 @@ def create_application() -> FastAPI:
 
 
 def setup_middleware(app: FastAPI) -> None:
-    """Configure application middleware."""
+    """Configure the middleware stack.
 
-    # Session middleware
-    app.add_middleware(SessionMiddleware, secret_key=settings.JWT_SECRET_KEY)
+    Starlette wraps middleware in reverse registration order, so the *last*
+    ``add_middleware`` call is the outermost layer.  Reading bottom-up:
 
-    # Custom middleware
-    app.add_middleware(RequestTimingMiddleware)
+        CORS -> request context -> gzip -> security headers -> metrics
+             -> rate limit -> session -> routes
+    """
+    app.add_middleware(SessionMiddleware, secret_key=settings.JWT_SECRET_KEY.get_secret_value())
     app.add_middleware(RateLimitMiddleware)
-
-    # CORS middleware
+    if settings.PROMETHEUS_ENABLED:
+        app.add_middleware(metrics.PrometheusMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
+    app.add_middleware(RequestContextMiddleware)
     setup_cors(app)
 
 
 def setup_routers(app: FastAPI) -> None:
     """Configure API routers."""
 
-    # Health check endpoint
-    @app.get("/health")
-    async def health_check():
-        return {
-            "status": "healthy",
-            "app": settings.APP_NAME,
-            "version": settings.APP_VERSION,
-            "environment": settings.ENVIRONMENT,
-        }
-
-    # Root endpoint
-    @app.get("/")
-    async def root():
+    @app.get("/", include_in_schema=False)
+    async def root() -> dict[str, Any]:
         return {
             "message": f"Welcome to {settings.APP_NAME}!",
             "version": settings.APP_VERSION,
             "docs": "/docs",
             "health": "/health",
+            "metrics": "/metrics" if settings.PROMETHEUS_ENABLED else None,
         }
+
+    app.include_router(health.router)
+    if settings.PROMETHEUS_ENABLED:
+        app.include_router(metrics.router)
 
     # API v1 routes
     app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])

@@ -1,11 +1,24 @@
 # File: app/core/config.py
+"""Application settings.
+
+Values come from environment variables (or a ``.env`` file).  Validation
+runs once at import time so misconfiguration fails fast at startup rather
+than on the first request that happens to touch the broken setting.
+"""
+
+from __future__ import annotations
 
 import os
 from functools import lru_cache
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import EmailStr, model_validator
+from pydantic import EmailStr, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+Environment = Literal["development", "testing", "staging", "production"]
+
+INSECURE_SECRET_MARKERS = ("change-me", "changeme", "secret", "password", "example")
+MIN_SECRET_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -23,7 +36,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     HOST: str = "0.0.0.0"
     PORT: int = 8000
-    ENVIRONMENT: str = "development"
+    ENVIRONMENT: Environment = "development"
 
     # Database
     DATABASE_URL: str = ""
@@ -32,6 +45,9 @@ class Settings(BaseSettings):
     DATABASE_NAME: str = "fastapi_db"
     DATABASE_USER: str = "fastapi_user"
     DATABASE_PASSWORD: str = "fastapi_pass"
+    DATABASE_POOL_SIZE: int = 10
+    DATABASE_MAX_OVERFLOW: int = 20
+    DATABASE_POOL_TIMEOUT: int = 30
 
     # Redis
     REDIS_URL: str = ""
@@ -40,22 +56,22 @@ class Settings(BaseSettings):
     REDIS_DB: int = 0
 
     # JWT & Security
-    JWT_SECRET_KEY: str = "change-me-in-production-use-a-long-random-string"
+    JWT_SECRET_KEY: SecretStr = SecretStr("change-me-in-production-use-a-long-random-string")
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # OAuth2 (Optional)
     GOOGLE_CLIENT_ID: str | None = None
-    GOOGLE_CLIENT_SECRET: str | None = None
+    GOOGLE_CLIENT_SECRET: SecretStr | None = None
     GITHUB_CLIENT_ID: str | None = None
-    GITHUB_CLIENT_SECRET: str | None = None
+    GITHUB_CLIENT_SECRET: SecretStr | None = None
 
     # Email
     EMAIL_HOST: str = "localhost"
     EMAIL_PORT: int = 587
     EMAIL_USER: str | None = None
-    EMAIL_PASSWORD: str | None = None
+    EMAIL_PASSWORD: SecretStr | None = None
     EMAIL_FROM: EmailStr = "noreply@fastapiversehub.com"
     EMAIL_USE_TLS: bool = True
 
@@ -65,8 +81,9 @@ class Settings(BaseSettings):
     ALLOWED_EXTENSIONS: str = "jpg,jpeg,png,gif,pdf,txt,docx,xlsx"
 
     # Rate Limiting
+    RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_PER_MINUTE: int = 60
-    RATE_LIMIT_BURST: int = 100
+    RATE_LIMIT_BURST: int = 100  # per 10-second window
 
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8080"
@@ -80,13 +97,19 @@ class Settings(BaseSettings):
 
     # Logging
     LOG_LEVEL: str = "INFO"
-    LOG_FILE: str = "./logs/app.log"
+    LOG_FORMAT: Literal["console", "json"] = "console"
+    LOG_FILE: str | None = None
     LOG_MAX_SIZE: int = 10485760  # 10MB
     LOG_BACKUP_COUNT: int = 5
+    SLOW_REQUEST_THRESHOLD_SECONDS: float = 1.0
 
     # Monitoring
     PROMETHEUS_ENABLED: bool = True
-    HEALTH_CHECK_TIMEOUT: int = 5
+    HEALTH_CHECK_TIMEOUT: float = 5.0
+
+    # ------------------------------------------------------------------
+    # Validation
+    # ------------------------------------------------------------------
 
     @model_validator(mode="before")
     @classmethod
@@ -111,30 +134,72 @@ class Settings(BaseSettings):
 
         return values
 
+    @field_validator("LOG_LEVEL")
+    @classmethod
+    def normalise_log_level(cls, value: str) -> str:
+        level = value.upper()
+        if level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+            raise ValueError(f"Unsupported LOG_LEVEL {value!r}")
+        return level
+
+    @model_validator(mode="after")
+    def enforce_production_safety(self) -> Settings:
+        """Refuse to start in production with development-grade settings."""
+        if self.ENVIRONMENT != "production":
+            return self
+
+        problems: list[str] = []
+        secret = self.JWT_SECRET_KEY.get_secret_value()
+        if len(secret) < MIN_SECRET_LENGTH:
+            problems.append(f"JWT_SECRET_KEY must be at least {MIN_SECRET_LENGTH} characters")
+        if any(marker in secret.lower() for marker in INSECURE_SECRET_MARKERS):
+            problems.append("JWT_SECRET_KEY looks like a placeholder value")
+        if self.DEBUG:
+            problems.append("DEBUG must be false in production")
+        if "*" in self.cors_origins_list:
+            problems.append("CORS_ORIGINS must not contain '*' in production")
+        if problems:
+            raise ValueError("Unsafe production configuration: " + "; ".join(problems))
+        return self
+
+    # ------------------------------------------------------------------
+    # Derived values
+    # ------------------------------------------------------------------
+
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT == "production"
+
+    @property
+    def async_database_url(self) -> str:
+        """SQLAlchemy URL with an async driver, whatever form the env provided."""
+        url = self.DATABASE_URL
+        if url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if url.startswith("sqlite://") and "+aiosqlite" not in url:
+            return url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+        return url
+
     @property
     def cors_origins_list(self) -> list[str]:
-        """Get CORS origins as a list."""
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     @property
     def cors_methods_list(self) -> list[str]:
-        """Get CORS methods as a list."""
-        return [method.strip() for method in self.CORS_METHODS.split(",")]
+        return [method.strip() for method in self.CORS_METHODS.split(",") if method.strip()]
 
     @property
     def allowed_extensions_list(self) -> list[str]:
-        """Get allowed file extensions as a list."""
-        return [ext.strip().lower() for ext in self.ALLOWED_EXTENSIONS.split(",")]
+        return [ext.strip().lower() for ext in self.ALLOWED_EXTENSIONS.split(",") if ext.strip()]
 
     def create_upload_path(self) -> None:
-        """Create upload directory if it doesn't exist."""
         os.makedirs(self.UPLOAD_PATH, exist_ok=True)
 
     def create_log_path(self) -> None:
-        """Create log directory if it doesn't exist."""
-        log_dir = os.path.dirname(self.LOG_FILE)
-        if log_dir:
-            os.makedirs(log_dir, exist_ok=True)
+        if self.LOG_FILE:
+            log_dir = os.path.dirname(self.LOG_FILE)
+            if log_dir:
+                os.makedirs(log_dir, exist_ok=True)
 
 
 @lru_cache

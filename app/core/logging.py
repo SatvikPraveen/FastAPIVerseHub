@@ -1,163 +1,137 @@
 # File: app/core/logging.py
+"""Structured logging built on structlog.
 
-import json
+* Every log line carries the current ``request_id`` (bound per request by the
+  request-context middleware via contextvars), so a single grep on a
+  correlation id reconstructs a request across services.
+* Output is human-readable in development and JSON in production/staging,
+  switchable with ``LOG_FORMAT``.
+* Third-party libraries that log through stdlib ``logging`` are routed
+  through the same processors, so their lines get the same shape.
+"""
+
+from __future__ import annotations
+
 import logging
 import logging.handlers
 import sys
+from contextvars import ContextVar
 from typing import Any
 
+import structlog
+
 from app.core.config import settings
-from app.core.time import utcnow
+
+request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
+
+_NOISY_LOGGERS = ("uvicorn.access", "sqlalchemy.engine", "redis", "httpx", "httpcore")
 
 
-class JSONFormatter(logging.Formatter):
-    """Custom JSON formatter for structured logging."""
-
-    def format(self, record: logging.LogRecord) -> str:
-        """Format log record as JSON."""
-        log_entry = {
-            "timestamp": utcnow().isoformat(),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "module": record.module,
-            "function": record.funcName,
-            "line": record.lineno,
-        }
-
-        # Add exception info if present
-        if record.exc_info:
-            log_entry["exception"] = self.formatException(record.exc_info)
-
-        # Add extra fields if present
-        if hasattr(record, "request_id"):
-            log_entry["request_id"] = record.request_id
-
-        if hasattr(record, "user_id"):
-            log_entry["user_id"] = record.user_id
-
-        if hasattr(record, "extra_data"):
-            log_entry["extra_data"] = record.extra_data
-
-        return json.dumps(log_entry, ensure_ascii=False)
+def _add_request_id(_: Any, __: str, event_dict: dict[str, Any]) -> dict[str, Any]:
+    request_id = request_id_var.get()
+    if request_id and "request_id" not in event_dict:
+        event_dict["request_id"] = request_id
+    return event_dict
 
 
-class RequestLogger:
-    """Logger for HTTP requests with correlation IDs."""
+def _shared_processors() -> list[Any]:
+    return [
+        structlog.contextvars.merge_contextvars,
+        _add_request_id,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso", utc=True),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.UnicodeDecoder(),
+    ]
 
-    def __init__(self):
-        self.logger = logging.getLogger("fastapi.requests")
 
-    def log_request(
-        self,
-        method: str,
-        url: str,
-        status_code: int,
-        duration: float,
-        request_id: str | None = None,
-        user_id: int | None = None,
-        extra_data: dict[str, Any] | None = None,
-    ) -> None:
-        """Log HTTP request details."""
-        message = f"{method} {url} - {status_code} ({duration:.3f}s)"
+def _renderer() -> Any:
+    if settings.LOG_FORMAT == "json" or settings.ENVIRONMENT in {"staging", "production"}:
+        return structlog.processors.JSONRenderer()
+    return structlog.dev.ConsoleRenderer(colors=sys.stdout.isatty())
 
-        extra = {"request_id": request_id, "user_id": user_id, "extra_data": extra_data or {}}
 
-        # Choose log level based on status code
-        if status_code >= 500:
-            self.logger.error(message, extra=extra)
-        elif status_code >= 400:
-            self.logger.warning(message, extra=extra)
-        else:
-            self.logger.info(message, extra=extra)
+def configure_structlog() -> None:
+    """Route structlog through stdlib ``logging``.
+
+    Called at import time so that loggers obtained before :func:`setup_logging`
+    runs (module-level ``logger = get_logger(__name__)``) already emit through
+    stdlib handlers.  That is also what lets ``caplog`` capture them in tests,
+    where the application lifespan never runs.
+    """
+    structlog.configure(
+        processors=[
+            structlog.stdlib.filter_by_level,
+            *_shared_processors(),
+            structlog.processors.format_exc_info,
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=False,
+    )
 
 
 def setup_logging() -> None:
-    """Configure application logging."""
+    """Configure structlog and stdlib logging handlers. Safe to call more than once."""
+    level = getattr(logging, settings.LOG_LEVEL, logging.INFO)
+    shared = _shared_processors()
 
-    # Create logs directory
-    settings.create_log_path()
+    configure_structlog()
 
-    # Root logger configuration
-    root_logger = logging.getLogger()
-    root_logger.setLevel(getattr(logging, settings.LOG_LEVEL.upper()))
-
-    # Remove existing handlers
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-
-    # Console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(getattr(logging, settings.LOG_LEVEL.upper()))
-
-    if settings.ENVIRONMENT == "development":
-        # Simple format for development
-        console_formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-        )
-    else:
-        # JSON format for production
-        console_formatter = JSONFormatter()
-
-    console_handler.setFormatter(console_formatter)
-    root_logger.addHandler(console_handler)
-
-    # File handler with rotation
-    file_handler = logging.handlers.RotatingFileHandler(
-        settings.LOG_FILE,
-        maxBytes=settings.LOG_MAX_SIZE,
-        backupCount=settings.LOG_BACKUP_COUNT,
-        encoding="utf-8",
+    formatter = structlog.stdlib.ProcessorFormatter(
+        foreign_pre_chain=shared,
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            _renderer(),
+        ],
     )
-    file_handler.setLevel(getattr(logging, settings.LOG_LEVEL.upper()))
-    file_handler.setFormatter(JSONFormatter())
-    root_logger.addHandler(file_handler)
 
-    # Configure specific loggers
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
 
-    # FastAPI logger
-    fastapi_logger = logging.getLogger("fastapi")
-    fastapi_logger.setLevel(logging.INFO)
+    console = logging.StreamHandler(sys.stdout)
+    console.setFormatter(formatter)
+    root.addHandler(console)
 
-    # Uvicorn logger
-    uvicorn_access_logger = logging.getLogger("uvicorn.access")
-    uvicorn_access_logger.handlers = []  # Remove default handler
+    if settings.LOG_FILE:
+        settings.create_log_path()
+        file_handler = logging.handlers.RotatingFileHandler(
+            settings.LOG_FILE,
+            maxBytes=settings.LOG_MAX_SIZE,
+            backupCount=settings.LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(formatter)
+        root.addHandler(file_handler)
 
-    uvicorn_error_logger = logging.getLogger("uvicorn.error")
-    uvicorn_error_logger.handlers = []  # Remove default handler
+    root.setLevel(level)
 
-    # SQLAlchemy logger (only show warnings and errors)
-    sqlalchemy_logger = logging.getLogger("sqlalchemy.engine")
-    sqlalchemy_logger.setLevel(logging.WARNING)
+    for name in _NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
+    # Our own access log replaces uvicorn's
+    logging.getLogger("uvicorn.access").propagate = False
 
-    # Redis logger
-    redis_logger = logging.getLogger("redis")
-    redis_logger.setLevel(logging.WARNING)
-
-    # Celery logger
-    celery_logger = logging.getLogger("celery")
-    celery_logger.setLevel(logging.INFO)
-
-    logging.info(f"Logging configured - Level: {settings.LOG_LEVEL}")
-
-
-def get_logger(name: str) -> logging.Logger:
-    """Get a logger instance with the given name."""
-    return logging.getLogger(name)
+    structlog.get_logger(__name__).info(
+        "logging configured", level=settings.LOG_LEVEL, format=settings.LOG_FORMAT
+    )
 
 
-def log_with_context(
-    logger: logging.Logger,
-    level: int,
-    message: str,
-    request_id: str | None = None,
-    user_id: int | None = None,
-    **kwargs,
-) -> None:
-    """Log message with request context."""
-    extra = {"request_id": request_id, "user_id": user_id, "extra_data": kwargs}
-    logger.log(level, message, extra=extra)
+def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
+    """Return a structlog logger bound to ``name``."""
+    return structlog.stdlib.get_logger(name)
 
 
-# Global request logger instance
-request_logger = RequestLogger()
+def bind_request_context(**values: Any) -> None:
+    """Attach key/value pairs to every log line emitted for the current request."""
+    structlog.contextvars.bind_contextvars(**values)
+
+
+def clear_request_context() -> None:
+    structlog.contextvars.clear_contextvars()
+
+
+configure_structlog()

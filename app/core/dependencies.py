@@ -1,27 +1,30 @@
 # File: app/core/dependencies.py
 
 from collections.abc import AsyncGenerator
+from typing import Any
 
 import redis.asyncio as redis
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.common.cache_utils import cache_manager
 from app.core.config import settings
 from app.core.security import security_manager
 from app.models.user import User
 
-# Database setup
-engine = create_async_engine(
-    settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://"),
-    echo=settings.DEBUG,
-    future=True,
-)
+# Database setup ---------------------------------------------------------------
+_engine_kwargs: dict[str, Any] = {"echo": settings.DEBUG, "pool_pre_ping": True}
+if not settings.async_database_url.startswith("sqlite"):
+    _engine_kwargs.update(
+        pool_size=settings.DATABASE_POOL_SIZE,
+        max_overflow=settings.DATABASE_MAX_OVERFLOW,
+        pool_timeout=settings.DATABASE_POOL_TIMEOUT,
+    )
+
+engine = create_async_engine(settings.async_database_url, **_engine_kwargs)
 
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
-
-# Redis setup
-redis_client: redis.Redis | None = None
 
 # Security
 security = HTTPBearer()
@@ -40,13 +43,8 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def get_redis() -> redis.Redis:
-    """Dependency for Redis client."""
-    global redis_client
-
-    if redis_client is None:
-        redis_client = redis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
-
-    return redis_client
+    """Dependency for the shared Redis client (created in the app lifespan)."""
+    return await cache_manager.get_redis()
 
 
 async def get_current_user(
@@ -208,8 +206,6 @@ async def close_db_connection():
         await engine.dispose()
 
 
-async def close_redis_connection():
+async def close_redis_connection() -> None:
     """Close Redis connection on shutdown."""
-    global redis_client
-    if redis_client:
-        await redis_client.close()
+    await cache_manager.close()
